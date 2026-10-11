@@ -34,142 +34,149 @@ struct MenuBarHiderSettings: View {
     }
 
     var body: some View {
-        Form {
-            Section(text.pageTitle) {
-                Toggle(text.enable, isOn: $enabled)
-                    .onChange(of: enabled) { _, isNowEnabled in
-                        MenuBarHiderService.shared.syncWithPreferences()
-                        if isNowEnabled {
-                            MenuBarHiderService.shared.beginConfigurationMode()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text(text.pageTitle).font(.title2.bold())
+                SettingsCard(title: text.pageTitle) {
+                    Toggle(text.enable, isOn: $enabled)
+                        .onChange(of: enabled) { _, isNowEnabled in
+                            MenuBarHiderService.shared.syncWithPreferences()
+                            if isNowEnabled {
+                                MenuBarHiderService.shared.beginConfigurationMode()
+                            }
+                        }
+                    Text(text.enableCaption)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    guideDiagram
+                }
+
+                SettingsCard(title: text.howToUseTitle) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        guideStep(number: "1", text: text.howToUseStep1)
+                        guideStep(number: "2", text: text.howToUseStep2)
+                        guideStep(number: "3", text: text.howToUseStep3)
+                    }
+                    .padding(.vertical, 4)
+
+                    Button(text.contextMenuShowAll) {
+                        MenuBarHiderService.shared.revealForStatusItemRecovery()
+                    }
+                    .disabled(!enabled)
+
+                    Button(action: triggerResetPositions) {
+                        HStack(spacing: 6) {
+                            Image(systemName: didResetPositions ? "checkmark.circle.fill" : "arrow.counterclockwise")
+                                .foregroundStyle(didResetPositions ? .green : .accentColor)
+                            Text(didResetPositions ? text.resetPositionsSuccess : text.resetPositionsButton)
                         }
                     }
-                Text(text.enableCaption)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .disabled(!enabled)
 
-                guideDiagram
-            }
-
-            Section(text.howToUseTitle) {
-                VStack(alignment: .leading, spacing: 8) {
-                    guideStep(number: "1", text: text.howToUseStep1)
-                    guideStep(number: "2", text: text.howToUseStep2)
-                    guideStep(number: "3", text: text.howToUseStep3)
+                    Text(text.resetPositionsCaption)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                .padding(.vertical, 4)
 
-                Button(text.contextMenuShowAll) {
-                    MenuBarHiderService.shared.revealForStatusItemRecovery()
+                SettingsCard(title: text.iconStyleTitle) {
+                    Picker(text.iconStyleTitle, selection: iconStyle) {
+                        Label(text.styleChevron, systemImage: "chevron.right").tag(MenuBarHiderIconStyle.chevron)
+                        Label(text.styleDots, systemImage: "ellipsis.circle").tag(MenuBarHiderIconStyle.dots)
+                        Label(text.styleEye, systemImage: "eye").tag(MenuBarHiderIconStyle.eye)
+                        Label(text.styleSlash, systemImage: "line.diagonal").tag(MenuBarHiderIconStyle.slash)
+                    }
+                    .pickerStyle(.menu)
                 }
                 .disabled(!enabled)
 
-                Button(action: triggerResetPositions) {
-                    HStack(spacing: 6) {
-                        Image(systemName: didResetPositions ? "checkmark.circle.fill" : "arrow.counterclockwise")
-                            .foregroundStyle(didResetPositions ? .green : .accentColor)
-                        Text(didResetPositions ? text.resetPositionsSuccess : text.resetPositionsButton)
+                SettingsCard(title: text.alwaysHiddenSection) {
+                    Toggle(text.alwaysHiddenEnable, isOn: $alwaysHiddenEnabled)
+                        .onChange(of: alwaysHiddenEnabled) { _, isNowAlwaysHidden in
+                            MenuBarHiderService.shared.syncWithPreferences()
+                            if isNowAlwaysHidden {
+                                MenuBarHiderService.shared.showAll(startTimer: false)
+                            }
+                        }
+                    Text(text.alwaysHiddenCaption)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .disabled(!enabled)
+
+                SettingsCard(title: text.autoCollapseSection) {
+                    Toggle(text.autoCollapseEnable, isOn: $autoCollapse)
+                        .onChange(of: autoCollapse) { _, _ in
+                            MenuBarHiderService.shared.syncWithPreferences()
+                        }
+
+                    if autoCollapse {
+                        Picker(text.autoCollapseDelay, selection: $autoCollapseDelay) {
+                            ForEach(MenuBarHiderSupport.allowedAutoCollapseDelays, id: \.self) { seconds in
+                                Text(String(format: text.secondsFormat, seconds)).tag(seconds)
+                            }
+                        }
+                        .onChange(of: autoCollapseDelay) { _, _ in
+                            MenuBarHiderService.shared.syncWithPreferences()
+                        }
                     }
                 }
                 .disabled(!enabled)
 
-                Text(text.resetPositionsCaption)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section(text.iconStyleTitle) {
-                Picker(text.iconStyleTitle, selection: iconStyle) {
-                    Label(text.styleChevron, systemImage: "chevron.right").tag(MenuBarHiderIconStyle.chevron)
-                    Label(text.styleDots, systemImage: "ellipsis.circle").tag(MenuBarHiderIconStyle.dots)
-                    Label(text.styleEye, systemImage: "eye").tag(MenuBarHiderIconStyle.eye)
-                    Label(text.styleSlash, systemImage: "line.diagonal").tag(MenuBarHiderIconStyle.slash)
-                }
-                .pickerStyle(.menu)
-            }
-            .disabled(!enabled)
-
-            Section(text.alwaysHiddenSection) {
-                Toggle(text.alwaysHiddenEnable, isOn: $alwaysHiddenEnabled)
-                    .onChange(of: alwaysHiddenEnabled) { _, isNowAlwaysHidden in
-                        MenuBarHiderService.shared.syncWithPreferences()
-                        if isNowAlwaysHidden {
-                            MenuBarHiderService.shared.showAll(startTimer: false)
+                SettingsCard(title: text.interactionSection) {
+                    Toggle(text.expandOnHover, isOn: $expandOnHover)
+                        .onChange(of: expandOnHover) { _, _ in
+                            MenuBarHiderService.shared.syncWithPreferences()
                         }
-                    }
-                Text(text.alwaysHiddenCaption)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .disabled(!enabled)
+                    Text(text.expandOnHoverCaption)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
 
-            Section(text.autoCollapseSection) {
-                Toggle(text.autoCollapseEnable, isOn: $autoCollapse)
-                    .onChange(of: autoCollapse) { _, _ in
-                        MenuBarHiderService.shared.syncWithPreferences()
-                    }
-
-                if autoCollapse {
-                    Picker(text.autoCollapseDelay, selection: $autoCollapseDelay) {
-                        ForEach(MenuBarHiderSupport.allowedAutoCollapseDelays, id: \.self) { seconds in
-                            Text(String(format: text.secondsFormat, seconds)).tag(seconds)
+                    Toggle(text.scrollToToggle, isOn: $scrollToToggle)
+                        .onChange(of: scrollToToggle) { _, _ in
+                            MenuBarHiderService.shared.syncWithPreferences()
                         }
-                    }
-                    .onChange(of: autoCollapseDelay) { _, _ in
-                        MenuBarHiderService.shared.syncWithPreferences()
-                    }
-                }
-            }
-            .disabled(!enabled)
-
-            Section(text.interactionSection) {
-                Toggle(text.expandOnHover, isOn: $expandOnHover)
-                    .onChange(of: expandOnHover) { _, _ in
-                        MenuBarHiderService.shared.syncWithPreferences()
-                    }
-                Text(text.expandOnHoverCaption)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Toggle(text.scrollToToggle, isOn: $scrollToToggle)
-                    .onChange(of: scrollToToggle) { _, _ in
-                        MenuBarHiderService.shared.syncWithPreferences()
-                    }
-                Text(text.scrollToToggleCaption)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Toggle(text.hapticFeedback, isOn: $hapticFeedback)
-                    .onChange(of: hapticFeedback) { _, _ in
-                        MenuBarHiderService.shared.syncWithPreferences()
-                    }
-                Text(text.hapticFeedbackCaption)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .disabled(!enabled)
-
-            Section(text.shortcutSection) {
-                Toggle(text.shortcutToggle, isOn: $shortcutEnabled)
-                    .onChange(of: shortcutEnabled) { _, _ in
-                        MenuBarHiderService.shared.syncWithPreferences()
-                    }
-
-                ShortcutPreferenceRow(role: .menuBarHider, isEnabled: shortcutEnabled && enabled) {
-                    MenuBarHiderService.shared.syncWithPreferences()
-                }
-                if let conflict = service.shortcutConflict {
-                    Text(String(format: l10n.s.shortcutConflictFormat, conflict.title(l10n.s)))
+                    Text(text.scrollToToggleCaption)
                         .font(.caption)
-                        .foregroundStyle(.orange)
-                } else if service.shortcutRegistrationFailed {
-                    Text(l10n.s.shortcutUnavailable)
+                        .foregroundStyle(.secondary)
+
+                    Toggle(text.hapticFeedback, isOn: $hapticFeedback)
+                        .onChange(of: hapticFeedback) { _, _ in
+                            MenuBarHiderService.shared.syncWithPreferences()
+                        }
+                    Text(text.hapticFeedbackCaption)
                         .font(.caption)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(.secondary)
                 }
+                .disabled(!enabled)
+
+                SettingsCard(title: text.shortcutSection) {
+                    Toggle(text.shortcutToggle, isOn: $shortcutEnabled)
+                        .onChange(of: shortcutEnabled) { _, _ in
+                            MenuBarHiderService.shared.syncWithPreferences()
+                        }
+
+                    ShortcutPreferenceRow(role: .menuBarHider, isEnabled: shortcutEnabled && enabled) {
+                        MenuBarHiderService.shared.syncWithPreferences()
+                    }
+                    if let conflict = service.shortcutConflict {
+                        Text(String(format: l10n.s.shortcutConflictFormat, conflict.title(l10n.s)))
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    } else if service.shortcutRegistrationFailed {
+                        Text(l10n.s.shortcutUnavailable)
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+                .disabled(!enabled)
+                MenuBarOrganizerSettings()
             }
-            .disabled(!enabled)
+            .frame(maxWidth: 760)
+            .frame(maxWidth: .infinity)
+            .padding(22)
         }
-        .formStyle(.grouped)
+        .toggleStyle(.switch)
         .onAppear {
             pageIsVisible = true
             if enabled {

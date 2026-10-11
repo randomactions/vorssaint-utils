@@ -35,6 +35,7 @@ enum MenuBarHiderRuntimeTests {
         func unregister() { registered = false; unregisters += 1 }
     }
     class Fixture {
+        func syncOrganizer() {} // Advanced service owns its own lifecycle gates.
         let defaults: UserDefaults
         let hotkey = Hotkey()
         var isEnabled = false
@@ -47,6 +48,7 @@ enum MenuBarHiderRuntimeTests {
         var autoCollapseTimer: Timer?
         var autoCollapseGeneration: UInt64 = 0
         var recoveryHoldsExpansion = false
+        var organizerHoldsExpansion = false
         static let swappedRolesKey = "menuBarHiderSeparatorRolesSwapped"
         var separatorRolesSwapped = false
         var physicalSeparatorItem: Item?
@@ -315,6 +317,24 @@ enum MenuBarHiderRuntimeTests {
         host.setReorderingItems(false)
         suite.expect(!host.isCollapsed && host.autoCollapseTimer != nil && host.hoverWatchdogActive,
                      "an expanded bar resumes automatic and hover collapse after reordering")
+
+        host.beginOrganizerOperation()
+        host.showAll(startTimer: false)
+        let menuGeneration = host.autoCollapseGeneration
+        host.syncWithPreferences()
+        host.autoCollapseIfCurrent(generation: menuGeneration)
+        host.toggle()
+        host.expand()
+        host.collapse()
+        let heldInstalls = host.installs
+        host.resetSeparatorPositions()
+        suite.expect(host.installs == heldInstalls, "resetting separators cannot remove a native activation anchor mid-operation")
+        suite.expect(host.organizerHoldsExpansion && !host.isCollapsed && host.isShowingAll
+                     && host.autoCollapseTimer == nil,
+                     "preference sync, manual collapse and stale timers cannot hide a native menu during activation")
+        host.endOrganizerOperation(resume: true)
+        suite.expect(!host.organizerHoldsExpansion && host.autoCollapseTimer != nil,
+                     "finishing a native menu resumes the user's automatic collapse preference")
 
         let role = GlobalShortcutRole.menuBarHider
         suite.expect(role.requiredEnableKeys.contains(DefaultsKey.menuBarHiderEnabled),

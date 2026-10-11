@@ -37,6 +37,7 @@ struct MetricsTests {
             ("scroll-modifier", { ScrollHorizontalModifierTests.run(suite) }),
             ("linear-scroll", { LinearScrollTapTests.run(suite) }),
             ("menu-bar-hider", {
+                MenuBarOrganizerTests.run(suite)
                 MenuBarHiderTests.run(suite)
                 MenuBarHiderRuntimeTests.run(suite)
             }),

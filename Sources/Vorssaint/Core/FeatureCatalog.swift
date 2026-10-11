@@ -382,12 +382,13 @@ extension AppFeature {
         case .diskImageInstaller: return [.appManagement]
         case .mixer: return [.audioCapture, .accessibility]
         case .musicBlock: return [.accessibility]
+        case .menuBarHider: return [.accessibility]
         case .monitorCPU, .monitorMemory, .monitorDisk, .monitorPower: return [.notifications]
         case .clipboardHistory, .shelf, .urlCleaner,
              .soundOutputSwitcher, .audioPriority,
              .extraBrightness, .bluetoothSleep, .quickLauncher, .colorPicker, .micMute, .mediaTools,
              .scratchpad, .wallpaper, .monitorGPU, .monitorNetwork, .connectedDevices, .fanControl, .killProcess,
-             .portManager, .menuBarHider:
+             .portManager:
             return []
         }
     }
@@ -397,7 +398,7 @@ extension AppFeature {
     /// is actually used.
     var onboardingPermissions: [AppPermission] {
         switch self {
-        case .keepAwake, .brightness, .radialMenu, .quickToggles, .cleaner,
+        case .menuBarHider, .keepAwake, .brightness, .radialMenu, .quickToggles, .cleaner,
              .uninstaller, .homebrew, .appUpdates, .mixer, .cameraPreview,
              .micMute, .musicBlock, .notchWatch:
             return []
@@ -541,6 +542,8 @@ extension AppFeature {
                     RadialMenuSupport.decode(dataFor(DefaultsKey.radialMenuItems)))
                     || RadialMenuMouseTrigger.sanitized(
                         stringFor(DefaultsKey.radialMenuMouseButton)) != .off
+            case (.menuBarHider, .accessibility):
+                return boolFor(DefaultsKey.menuBarOrganizerAdvanced)
             case (.keepAwake, .accessibility):
                 return boolFor(DefaultsKey.keepAwakeMouseJiggleEnabled)
             case (.mixer, .accessibility):

@@ -80,6 +80,8 @@ def main():
                              "for: shortcut, excluding: .menuBarHider, isAvailable: { $0.isAvailable(in: self.defaults) }, includeInactive: true)")
                     for prefix in [
                         "    func syncWithPreferences()", "    func resetSeparatorPositions()",
+                        "    func beginOrganizerOperation()", "    func endOrganizerOperation(",
+                        "    func resumeAfterOrganizerOperation()",
                         "    private func syncHotkey()", "    private func teardown()", "    private func setupScrollMonitor()",
                         "    func toggle()", "    func expand(", "    func collapse()", "    func showAll(",
                         "    private func applySeparatorOrder(", "    private func repairSeparatorOrder()", "    private func applyFallbackSeparatorOrder(", "    private func cancelPendingClick()", "    private func finishPendingClick(",

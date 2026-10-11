@@ -17,6 +17,7 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
     @Published private(set) var shortcutConflict: GlobalShortcutRole?
     private var autoCollapseGeneration: UInt64 = 0
     private var recoveryHoldsExpansion = false
+    private var organizerHoldsExpansion = false
 
     private var toggleItem: NSStatusItem?
     private var physicalSeparatorItem: NSStatusItem?
@@ -91,6 +92,7 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
         isEnabled = enabled
 
         syncHotkey()
+        if !enabled { syncOrganizer() }
 
         if enabled {
             installOrUpdateItems()
@@ -106,10 +108,53 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
         } else {
             teardown()
         }
+        if enabled { syncOrganizer() }
+    }
+
+    // Read only our own controls. WindowServer coordinates are used by the
+    // advanced backend, and AppKit coordinates anchor its floating panel.
+    var organizerAnchor: CGRect? { toggleItem?.button?.window?.frame }
+
+    func organizerGeometry() -> (hidden: CGRect, always: CGRect?, excluded: Set<CGWindowID>)? {
+        guard isEnabled, MenuBarOrganizerPolicy.supportsAdvancedBackend else { return nil }
+        func windowID(_ item: NSStatusItem?) -> CGWindowID? {
+            item?.button?.window.flatMap { MenuBarHiderSupport.statusWindowID($0.windowNumber) }
+        }
+        let ids = [windowID(toggleItem), windowID(physicalSeparatorItem), windowID(physicalAlwaysHiddenItem)]
+        guard let hiddenID = windowID(separatorItem),
+              let hidden = MenuBarWindowServerBridge.frame(of: hiddenID) else { return nil }
+        let always = windowID(alwaysHiddenItem).flatMap { MenuBarWindowServerBridge.frame(of: $0) }
+        return (hidden, always, Set(ids.compactMap { $0 }))
+    }
+
+    func resumeAfterOrganizerOperation() {
+        guard isEnabled, !isConfiguring else { return }
+        restartAutoCollapseTimerIfNeeded()
+    }
+
+    private func syncOrganizer() {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { MenuBarOrganizerService.shared.syncWithPreferences() }
+        } else {
+            DispatchQueue.main.async { MenuBarOrganizerService.shared.syncWithPreferences() }
+        }
+    }
+
+    func beginOrganizerOperation() {
+        organizerHoldsExpansion = true
+        cancelPendingClick()
+        stopAutoCollapseTimer()
+        stopHoverWatchdog()
+        didExpandFromHover = false
+    }
+
+    func endOrganizerOperation(resume: Bool) {
+        organizerHoldsExpansion = false
+        if resume { resumeAfterOrganizerOperation() }
     }
 
     func resetSeparatorPositions() {
-        guard isEnabled else { return }
+        guard isEnabled, !organizerHoldsExpansion else { return }
         teardown()
         separatorRolesSwapped = false
         UserDefaults.standard.removeObject(forKey: Self.swappedRolesKey)
@@ -424,6 +469,7 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
         shortcutRegistrationFailed = false
         shortcutConflict = nil
         recoveryHoldsExpansion = false
+        organizerHoldsExpansion = false
         stopAutoCollapseTimer()
         stopHoverWatchdog()
         didExpandFromHover = false
@@ -457,7 +503,7 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
     // MARK: - State Management
 
     func toggle() {
-        guard isEnabled else { return }
+        guard isEnabled, !organizerHoldsExpansion else { return }
         recoveryHoldsExpansion = false
         if isCollapsed {
             expand()
@@ -468,7 +514,7 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
 
     func expand(startTimer: Bool = true) {
         cancelPendingClick()
-        guard isEnabled else { return }
+        guard isEnabled, !organizerHoldsExpansion else { return }
         repairSeparatorOrder()
         recoveryHoldsExpansion = false
         stopHoverWatchdog()
@@ -491,7 +537,7 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
 
     func collapse() {
         cancelPendingClick()
-        guard isEnabled else { return }
+        guard isEnabled, !organizerHoldsExpansion else { return }
         recoveryHoldsExpansion = false
         repairSeparatorOrder()
         let wasExpanded = !isCollapsed || isShowingAll
@@ -925,6 +971,16 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
             }
         }
 
+        if UserDefaults.standard.bool(forKey: DefaultsKey.menuBarOrganizerAdvanced),
+           MenuBarOrganizerPolicy.supportsAdvancedBackend {
+            let advanced = FeatureStrings.menuBarOrganizer(L10n.shared.language)
+            let drawer = NSMenuItem(title: advanced.drawer, action: #selector(contextMenuDrawer), keyEquivalent: "")
+            drawer.target = self
+            menu.addItem(drawer)
+            let search = NSMenuItem(title: advanced.search, action: #selector(contextMenuSearch), keyEquivalent: "")
+            search.target = self
+            menu.addItem(search)
+        }
         menu.addItem(NSMenuItem.separator())
 
         let settingsItem = NSMenuItem(title: strings.contextMenuSettings, action: #selector(contextMenuOpenSettings), keyEquivalent: ",")
@@ -932,6 +988,13 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
         menu.addItem(settingsItem)
 
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
+    }
+
+    @objc private func contextMenuDrawer() {
+        Task { @MainActor in MenuBarOrganizerService.shared.showDrawer() }
+    }
+    @objc private func contextMenuSearch() {
+        Task { @MainActor in MenuBarOrganizerService.shared.showDrawer(search: true) }
     }
 
     @objc private func contextMenuExpand() { expand() }
@@ -947,7 +1010,7 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
 
     private func restartAutoCollapseTimerIfNeeded() {
         stopAutoCollapseTimer()
-        guard isEnabled, !isCollapsed, !isConfiguring, !recoveryHoldsExpansion, !isReorderingItems else { return }
+        guard isEnabled, !isCollapsed, !isConfiguring, !recoveryHoldsExpansion, !organizerHoldsExpansion, !isReorderingItems else { return }
 
         let autoCollapse = UserDefaults.standard.bool(forKey: DefaultsKey.menuBarHiderAutoCollapse)
         guard autoCollapse else { return }
@@ -966,7 +1029,7 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
 
     private func autoCollapseIfCurrent(generation: UInt64) {
         guard generation == autoCollapseGeneration, isEnabled, !isConfiguring,
-              !isCollapsed, !recoveryHoldsExpansion, !isReorderingItems,
+              !isCollapsed, !recoveryHoldsExpansion, !organizerHoldsExpansion, !isReorderingItems,
               UserDefaults.standard.bool(forKey: DefaultsKey.menuBarHiderAutoCollapse)
         else { return }
         collapse()

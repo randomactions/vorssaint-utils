@@ -941,6 +941,17 @@ enum DefaultsKey {
     static let radialMenuProfiles = "radialMenuProfiles"  // Data: [RadialMenuProfile] JSON
 
     // Menu Bar Hider
+    static let menuBarOrganizerAdvanced = "menuBarOrganizerAdvanced"
+    static let menuBarOrganizerSpacing = "menuBarOrganizerSpacing"
+    static let menuBarOrganizerAppearance = "menuBarOrganizerAppearance"
+    static let menuBarOrganizerGradient = "menuBarOrganizerGradient"
+    static let menuBarOrganizerBorder = "menuBarOrganizerBorder"
+    static let menuBarOrganizerShadow = "menuBarOrganizerShadow"
+    static let menuBarOrganizerRounded = "menuBarOrganizerRounded"
+    static let menuBarOrganizerSplit = "menuBarOrganizerSplit"
+    static let menuBarOrganizerFirstColor = "menuBarOrganizerFirstColor"
+    static let menuBarOrganizerSecondColor = "menuBarOrganizerSecondColor"
+    static let menuBarOrganizerOpacity = "menuBarOrganizerOpacity"
     static let menuBarHiderEnabled = "menuBarHiderEnabled"
     static let menuBarHiderCollapsed = "menuBarHiderCollapsed"
     static let menuBarHiderAlwaysHiddenEnabled = "menuBarHiderAlwaysHiddenEnabled"
@@ -1568,6 +1579,17 @@ enum Defaults {
         DefaultsKey.panelControlCutPaste: true,
         DefaultsKey.panelControlAutoQuit: true,
         DefaultsKey.panelControlShelf: true,
+        DefaultsKey.menuBarOrganizerAdvanced: false,
+        DefaultsKey.menuBarOrganizerSpacing: 16,
+        DefaultsKey.menuBarOrganizerAppearance: false,
+        DefaultsKey.menuBarOrganizerGradient: false,
+        DefaultsKey.menuBarOrganizerBorder: false,
+        DefaultsKey.menuBarOrganizerShadow: false,
+        DefaultsKey.menuBarOrganizerRounded: true,
+        DefaultsKey.menuBarOrganizerSplit: true,
+        DefaultsKey.menuBarOrganizerFirstColor: "#303038",
+        DefaultsKey.menuBarOrganizerSecondColor: "#606070",
+        DefaultsKey.menuBarOrganizerOpacity: 0.25,
         DefaultsKey.menuBarHiderEnabled: false,
         DefaultsKey.menuBarHiderCollapsed: false,
         DefaultsKey.menuBarHiderAlwaysHiddenEnabled: true,
