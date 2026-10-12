@@ -40,6 +40,8 @@ struct MetricsTests {
                 MenuBarOrganizerTests.run(suite)
                 MenuBarHiderTests.run(suite)
                 MenuBarHiderRuntimeTests.run(suite)
+                MenuBarOrganizerLifecycleTests.run(suite)
+                MenuBarItemSourceResolverTests.run(suite)
             }),
             ("preferences", { PreferencesFeatureTests.run(suite) }),
             ("app-management", { AppManagementFeatureTests.run(suite) }),

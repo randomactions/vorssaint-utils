@@ -20,11 +20,26 @@ Recording is not required. Some system items therefore use a generic icon.
 Activating a hidden item temporarily moves its real status item into the visible
 section, opens its native menu, then restores its original position after the
 menu closes, including the prior collapsed, normally expanded, or show-all
-state. Normally expanded restores concealment of always-hidden items even when
-auto-collapse is off. Unknown, duplicate, protected, stale or unresolved item identities
-are refused. Failed operations leave the bar revealed for manual recovery;
-they are reported rather than treated as completed. Disable, uninstall and quit
+state. On a crowded notched bar, activation selects a reachable insertion slot
+farther right instead of inserting next to the notch. The target and the whole
+item width are checked again before dragging. Normally expanded restores
+concealment of always-hidden items even when auto-collapse is off. Unknown,
+duplicate, protected, stale or unresolved item identities
+are refused. Failures before any possible movement restore the previous display
+state and its timer. Once a drag may have displaced an item, failed or cancelled
+operations explicitly hold the bar revealed for manual recovery; a deliberate
+toggle or configuration session releases that hold. They are reported rather
+than treated as completed. Disable, uninstall and quit
 cancel operations and release pending mouse input and cursor suppression.
+Explicit organizer teardown also closes decoration panels. Decoration remains
+available with advanced mode off and without Accessibility.
+
+Stable window identities and app icons are reused during inventory polling.
+Each new operation revalidates identities, and application, permission, display
+and wake changes invalidate the inventory. Invalidated or cancelled scans cannot
+publish stale results. Reordering subscribes to mouse motion only while Command
+is held. Both double-click and Hide Always-Hidden Icons return to the normally
+expanded state when all icons are showing.
 
 The advanced backend is adapted from the earlier #360 proposal. It uses optional
 WindowServer queries and synthesized Command-drags, gated before initialization
@@ -43,8 +58,10 @@ Restore previous spacing restores both prior values, including removing a key
 that was originally absent. The first Apply preserves the original values until
 Restore succeeds, even across subsequent Apply operations or app restarts.
 Restore remains available when the hider is disabled. This recovery state is
-local to this Mac and is excluded from settings backup. Complete uninstall
-restores spacing first and stops if restoration fails or the recovery data is
+local to this Mac and is excluded from settings backup. A failed first Apply
+clears its new recovery record only if rollback succeeds; failed rollback keeps
+the original values recoverable. Existing malformed recovery data blocks Apply.
+Complete uninstall restores spacing first and stops if restoration fails or the recovery data is
 unreadable. The command-line uninstaller also keeps outstanding recovery data
 when the installed binary is missing or too old to restore it. Clearing
 permissions stops organizer input before revoking Accessibility and retains the
@@ -61,8 +78,10 @@ disabled. Automatically hidden menu bars are left undecorated.
 ## Validation boundary
 
 Automated tests cover search, geometry, ambiguity, section/neighbor verification,
-platform gates, synchronous input cleanup, spacing transactions and rollback,
-settings backup, contextual permission demand and all fifteen locales. These are
+platform gates, synchronous input cleanup, activation recovery, overlay teardown,
+identity-cache reuse and stale completions, Command-only motion monitoring,
+spacing transactions and rollback, settings backup, contextual permission demand
+and all fifteen locales. These are
 isolated tests; they do not synthesize input or modify the host's global spacing.
 
 Before leaving draft, verify the following physically on supported macOS versions:

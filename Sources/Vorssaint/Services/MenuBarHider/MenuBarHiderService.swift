@@ -42,6 +42,8 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
     private var scrollMonitor: Any?
     private var separatorDragMonitor: Any?
     private var localSeparatorDragMonitor: Any?
+    private var separatorMouseMoveMonitor: Any?
+    private var localSeparatorMouseMoveMonitor: Any?
     private var isReorderingItems = false
     private var separatorMeasurementPending = false
     private var separatorMeasurementGeneration: UInt64 = 0
@@ -258,7 +260,7 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
             return
         }
         guard separatorDragMonitor == nil, localSeparatorDragMonitor == nil else { return }
-        let mask: NSEvent.EventTypeMask = [.flagsChanged, .mouseMoved, .leftMouseUp]
+        let mask: NSEvent.EventTypeMask = [.flagsChanged, .leftMouseUp]
         localSeparatorDragMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
             self?.handleReorderingEvent(event)
             return event
@@ -266,10 +268,31 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
         separatorDragMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
             self?.handleReorderingEvent(event)
         }
+        syncSeparatorMouseMoveMonitor(commandHeld: NSEvent.modifierFlags.contains(.command))
+    }
+
+    private func syncSeparatorMouseMoveMonitor(commandHeld: Bool) {
+        guard isEnabled, commandHeld else {
+            if let separatorMouseMoveMonitor { NSEvent.removeMonitor(separatorMouseMoveMonitor) }
+            if let localSeparatorMouseMoveMonitor { NSEvent.removeMonitor(localSeparatorMouseMoveMonitor) }
+            separatorMouseMoveMonitor = nil
+            localSeparatorMouseMoveMonitor = nil
+            return
+        }
+        guard separatorMouseMoveMonitor == nil, localSeparatorMouseMoveMonitor == nil else { return }
+        localSeparatorMouseMoveMonitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
+            self?.handleReorderingEvent(event)
+            return event
+        }
+        separatorMouseMoveMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
+            self?.handleReorderingEvent(event)
+        }
     }
 
     private func handleReorderingEvent(_ event: NSEvent) {
         let commandHeld = event.modifierFlags.contains(.command)
+        syncSeparatorMouseMoveMonitor(commandHeld: commandHeld)
+        guard commandHeld else { setReorderingItems(false); return }
         let onMenuBar = MenuBarHiderSupport.pointerIsOnMenuBar(
             NSEvent.mouseLocation, screenFrames: NSScreen.screens.map(\.frame),
             barHeight: NSStatusBar.system.thickness)
@@ -300,6 +323,7 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
     }
 
     private func removeSeparatorDragMonitor() {
+        syncSeparatorMouseMoveMonitor(commandHeld: false)
         if let separatorDragMonitor { NSEvent.removeMonitor(separatorDragMonitor) }
         separatorDragMonitor = nil
         if let localSeparatorDragMonitor { NSEvent.removeMonitor(localSeparatorDragMonitor) }
@@ -365,16 +389,20 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
               String(describing: physicalAlwaysHiddenItem?.button?.accessibilityFrame()))
         #endif
         guard AXIsProcessTrusted(),
-              let pid = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.MenuBarAgent").first?.processIdentifier,
               let normalHelp = physicalSeparatorItem?.button?.toolTip,
               let permanentHelp = physicalAlwaysHiddenItem?.button?.toolTip else { return false }
+        let pids = MenuBarHiderAccessibility.hostPIDs(
+            currentPID: ProcessInfo.processInfo.processIdentifier,
+            runningPIDs: { bundleID in
+                NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).map(\.processIdentifier)
+            })
         separatorMeasurementPending = true
         separatorMeasurementRequested = false
         let generation = separatorMeasurementGeneration
         let observedRoles = separatorRolesSwapped
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let positions = MenuBarHiderAccessibility.separatorPositions(
-                pid: pid, normalHelp: normalHelp, permanentHelp: permanentHelp)
+                pids: pids, normalHelp: normalHelp, permanentHelp: permanentHelp)
             DispatchQueue.main.async { [weak self] in
                 guard let self, generation == self.separatorMeasurementGeneration else { return }
                 self.separatorMeasurementPending = false
@@ -887,7 +915,7 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
         if alwaysHiddenEnabled, withinGesture, gap >= 0, pendingClickTimer != nil {
             cancelPendingClick()
             didRevealInClickSequence = true
-            showAll()
+            toggleAlwaysHiddenSection()
             return
         }
         cancelPendingClick()
@@ -926,7 +954,7 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
 
     private func toggleAlwaysHiddenSection() {
         if isShowingAll {
-            collapse()
+            expand()
         } else {
             showAll()
         }
@@ -975,7 +1003,7 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
         let alwaysHiddenEnabled = UserDefaults.standard.bool(forKey: DefaultsKey.menuBarHiderAlwaysHiddenEnabled)
         if alwaysHiddenEnabled {
             if isShowingAll {
-                let hideAlwaysItem = NSMenuItem(title: strings.contextMenuHideAlways, action: #selector(contextMenuCollapse), keyEquivalent: "")
+                let hideAlwaysItem = NSMenuItem(title: strings.contextMenuHideAlways, action: #selector(contextMenuExpand), keyEquivalent: "")
                 hideAlwaysItem.target = self
                 menu.addItem(hideAlwaysItem)
             } else {

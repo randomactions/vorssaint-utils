@@ -87,12 +87,21 @@ def main():
                         "    func toggle()", "    func expand(", "    func collapse()", "    func showAll(",
                         "    private func applySeparatorOrder(", "    private func repairSeparatorOrder()", "    private func applyFallbackSeparatorOrder(", "    private func cancelPendingClick()", "    private func finishPendingClick(",
                         "    private func handleToggleClick(", "    private func performSingleClickToggle()",
+                        "    private func toggleAlwaysHiddenSection()", "    private func syncSeparatorMouseMoveMonitor(",
                         "    func beginConfigurationMode()", "    func endConfigurationMode()",
                         "    func revealForStatusItemRecovery()", "    private func persistCollapsedState()",
                         "    private func restartAutoCollapseTimerIfNeeded()", "    private func autoCollapseIfCurrent(",
                         "    private func stopAutoCollapseTimer()", "    private func setReorderingItems(_"])
           + "}\n}\n")
     general = "Sources/Vorssaint/UI/Settings/GeneralSettings.swift"
+    organizer = "Sources/Vorssaint/Services/MenuBarOrganizer/MenuBarOrganizerService.swift"
+    write("MenuBarOrganizerLifecycle.swift", "import AppKit\nimport Foundation\n"
+          + "extension MenuBarOrganizerLifecycleTests {\n@MainActor final class Host: Fixture {\n"
+          + "".join(declaration(organizer, prefix).replace("private ", "", 1)
+                    .replace("AXIsProcessTrusted()", "trusted") for prefix in [
+                        "    func syncWithPreferences()", "    func stop()",
+                        "    private func stopOperations()", "    private func finishActivationRecovery()"])
+          + "}\n}\n")
     write("LaunchAtLoginSettings.swift", "import Foundation\n"
           + "extension LaunchAtLoginSettingsTests.View {\n"
           + "".join(declaration(general, prefix).replace("private func", "func", 1)

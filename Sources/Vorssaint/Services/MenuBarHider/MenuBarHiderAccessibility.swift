@@ -4,14 +4,34 @@
 import ApplicationServices
 import Foundation
 
-/// Measures the controls hosted by MenuBarAgent, not the app's placeholder
+/// Measures labelled controls in their app or system host rather than placeholder
 /// NSWindows. Never requests permission, reads menu contents or sends input.
 enum MenuBarHiderAccessibility {
-    static func separatorPositions(pid: pid_t, normalHelp: String,
+    /// Native status items may be in their creating app or a system host,
+    /// depending on macOS. Measure our labelled controls wherever they live.
+    static func hostPIDs(currentPID: pid_t, runningPIDs: (String) -> [pid_t]) -> [pid_t] {
+        let candidates = [currentPID] + ["com.apple.controlcenter", "com.apple.MenuBarAgent"]
+            .flatMap(runningPIDs)
+        var seen = Set<pid_t>()
+        return candidates.filter { $0 > 0 && seen.insert($0).inserted }
+    }
+
+    static func separatorPositions(pids: [pid_t], normalHelp: String,
                                    permanentHelp: String) -> (normal: CGRect, permanent: CGRect)? {
+        for pid in pids {
+            if let positions = separatorPositions(pid: pid, normalHelp: normalHelp,
+                                                  permanentHelp: permanentHelp,
+                                                  deadline: Date().addingTimeInterval(0.2)) {
+                return positions
+            }
+        }
+        return nil
+    }
+
+    private static func separatorPositions(pid: pid_t, normalHelp: String,
+                                          permanentHelp: String, deadline: Date) -> (normal: CGRect, permanent: CGRect)? {
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.03)
-        let deadline = Date().addingTimeInterval(0.25)
         var pending: [AXUIElement] = [app]
         var visited = 0
         var normal: CGRect?

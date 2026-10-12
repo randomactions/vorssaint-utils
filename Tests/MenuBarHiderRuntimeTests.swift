@@ -9,13 +9,21 @@ enum MenuBarHiderRuntimeTests {
     final class Item { var visibleX: CGFloat? }
     enum NSEvent {
         static let doubleClickInterval = 0.5
-        enum EventMask { case scrollWheel }
+        enum EventMask { case scrollWheel, mouseMoved }
         static var registrations = 0
+        static var moveRegistrations = 0
+        static var removals = 0
         static func addLocalMonitorForEvents(matching: EventMask,
                                             handler: @escaping (AppKit.NSEvent) -> AppKit.NSEvent?) -> Any? {
-            registrations += 1
+            if matching == .mouseMoved { moveRegistrations += 1 } else { registrations += 1 }
             return NSObject()
         }
+        static func addGlobalMonitorForEvents(matching: EventMask,
+                                              handler: @escaping (AppKit.NSEvent) -> Void) -> Any? {
+            moveRegistrations += 1
+            return NSObject()
+        }
+        static func removeMonitor(_ monitor: Any) { removals += 1 }
     }
     enum NSStatusBar {
         static let system = Bar()
@@ -70,6 +78,8 @@ enum MenuBarHiderRuntimeTests {
         var hoverWatchdogActive = false
         var trackingActive = false
         var scrollMonitor: Any?
+        var separatorMouseMoveMonitor: Any?
+        var localSeparatorMouseMoveMonitor: Any?
         var scrollActive: Bool { scrollMonitor != nil }
         var installs = 0
         var appearances = 0
@@ -84,6 +94,7 @@ enum MenuBarHiderRuntimeTests {
             trackingActive = true
         }
         func handleScrollEvent(_ event: AppKit.NSEvent) {}
+        func handleReorderingEvent(_ event: AppKit.NSEvent) {}
         func stopHoverWatchdog() { hoverWatchdogActive = false }
         func startHoverWatchdog() { hoverWatchdogActive = true }
         func removeTrackingArea() { trackingActive = false }
@@ -206,6 +217,14 @@ enum MenuBarHiderRuntimeTests {
                      "a system-classified double click slower than 300 ms reveals always-hidden icons")
         clicks.handleToggleClick(clickCount: 3, timestamp: 10.45, alwaysHiddenEnabled: true)
         suite.expect(clicks.isShowingAll, "the tail of a reveal gesture cannot hide the recovered controls")
+        clicks.handleToggleClick(clickCount: 1, timestamp: 11, alwaysHiddenEnabled: true)
+        clicks.handleToggleClick(clickCount: 2, timestamp: 11.1, alwaysHiddenEnabled: true)
+        suite.expect(!clicks.isShowingAll && !clicks.isCollapsed,
+                     "a second double-click hides only always-hidden items, preserving the expanded section")
+        clicks.handleToggleClick(clickCount: 3, timestamp: 11.2, alwaysHiddenEnabled: true)
+        suite.expect(!clicks.isShowingAll && !clicks.isCollapsed,
+                     "a gesture tail cannot immediately reveal the section again")
+        clicks.toggleAlwaysHiddenSection()
         clicks.handleToggleClick(clickCount: 1, timestamp: 12, alwaysHiddenEnabled: true)
         clicks.finishPendingClick(generation: clicks.pendingClickGeneration)
         suite.expect(clicks.isCollapsed, "a new single click still closes the revealed groups")
@@ -220,6 +239,22 @@ enum MenuBarHiderRuntimeTests {
         clicks.handleToggleClick(clickCount: 2, timestamp: 16.1, alwaysHiddenEnabled: true)
         suite.expect(clicks.isShowingAll && clicks.pendingClickTimer == nil,
                      "AppKit-classified double clicks also resolve without a delayed collapse")
+        let moves = NSEvent.moveRegistrations
+        clicks.syncSeparatorMouseMoveMonitor(commandHeld: false)
+        suite.expect(NSEvent.moveRegistrations == moves, "idle hider does not subscribe to mouse motion")
+        clicks.syncSeparatorMouseMoveMonitor(commandHeld: true)
+        clicks.syncSeparatorMouseMoveMonitor(commandHeld: true)
+        suite.expect(NSEvent.moveRegistrations == moves + 2,
+                     "holding Command arms exactly one local and one global mouse monitor")
+        let removed = NSEvent.removals
+        clicks.syncSeparatorMouseMoveMonitor(commandHeld: false)
+        suite.expect(NSEvent.removals == removed + 2 && clicks.separatorMouseMoveMonitor == nil
+                     && clicks.localSeparatorMouseMoveMonitor == nil,
+                     "releasing Command removes both motion monitors")
+        clicks.isEnabled = false
+        clicks.syncSeparatorMouseMoveMonitor(commandHeld: true)
+        suite.expect(NSEvent.moveRegistrations == moves + 2, "disabled hider cannot arm motion monitoring")
+        clicks.isEnabled = true
         clicks.collapse()
         clicks.handleToggleClick(clickCount: 1, timestamp: 18, alwaysHiddenEnabled: true)
         RunLoop.main.run(until: Date().addingTimeInterval(0.6))

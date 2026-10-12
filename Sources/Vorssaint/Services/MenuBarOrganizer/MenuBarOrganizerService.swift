@@ -27,6 +27,9 @@ final class MenuBarOrganizerService: ObservableObject {
     private var editorVisible = false
     private var undo: (id: MenuBarItemIdentity, section: MenuBarOrganizerSection, neighbor: MenuBarItemIdentity?)?
     private var generation: UInt64 = 0
+    private var needsIdentityRefresh = true
+    private var inventoryRevision: UInt64 = 0
+    private var activationRecovery: (state: MenuBarHiderSupport.DisplayState, mayBeDisplaced: Bool)?
 
     private var text: MenuBarOrganizerStrings { FeatureStrings.menuBarOrganizer(L10n.shared.language) }
     private var hider: MenuBarHiderService { .shared }
@@ -39,16 +42,16 @@ final class MenuBarOrganizerService: ObservableObject {
 
     private init() {
         Permissions.shared.$accessibility.removeDuplicates().sink { [weak self] _ in
-            Task { @MainActor in self?.syncWithPreferences() }
+            Task { @MainActor in self?.inventoryChanged() }
         }.store(in: &subscriptions)
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
-            .sink { [weak self] _ in Task { @MainActor in self?.syncWithPreferences(); self?.refresh() } }
+            .sink { [weak self] _ in Task { @MainActor in self?.inventoryChanged() } }
             .store(in: &subscriptions)
         for notification in [NSWorkspace.didLaunchApplicationNotification,
                              NSWorkspace.didTerminateApplicationNotification,
                              NSWorkspace.didWakeNotification] {
             NSWorkspace.shared.notificationCenter.publisher(for: notification)
-                .sink { [weak self] _ in Task { @MainActor in self?.syncWithPreferences(); self?.refresh() } }
+                .sink { [weak self] _ in Task { @MainActor in self?.inventoryChanged() } }
                 .store(in: &subscriptions)
         }
         canRestoreSpacing = MenuBarGlobalSpacing.hasSavedValues
@@ -56,10 +59,12 @@ final class MenuBarOrganizerService: ObservableObject {
 
     func syncWithPreferences() {
         canRestoreSpacing = MenuBarGlobalSpacing.hasSavedValues
-        appearance.sync(enabled: enabled)
+        let hasConflict = !MenuBarOrganizerPolicy.conflictingManagers().isEmpty
+        // Decoration is independent of the Accessibility-backed organizer.
+        appearance.sync(enabled: enabled && !hasConflict)
         guard advancedRequested, MenuBarOrganizerPolicy.supportsAdvancedBackend,
-              AXIsProcessTrusted(), MenuBarOrganizerPolicy.conflictingManagers().isEmpty else {
-            stop()
+              AXIsProcessTrusted(), !hasConflict else {
+            stopOperations()
             return
         }
         isRunning = true
@@ -68,10 +73,24 @@ final class MenuBarOrganizerService: ObservableObject {
     }
 
     func stop() {
+        appearance.sync(enabled: false)
+        stopOperations()
+    }
+
+    private func inventoryChanged() {
+        inventoryRevision &+= 1
+        needsIdentityRefresh = true
+        provider.invalidateIcons()
+        syncWithPreferences()
+        refresh()
+    }
+
+    private func stopOperations() {
         generation &+= 1
         isRunning = false
         operationTask?.cancel()
         mover.cancel()
+        finishActivationRecovery()
         hider.endOrganizerOperation(resume: false)
         operationTask = nil
         refreshTask?.cancel()
@@ -84,9 +103,21 @@ final class MenuBarOrganizerService: ObservableObject {
         undo = nil
         canUndo = false
         isBusy = false
-        Task { await provider.invalidateIdentityCache() }
-        // A cancelled activation leaves the item revealed, reachable through
-        // the normal hider. Never continue a drag after disable or permission loss.
+        needsIdentityRefresh = true
+        // Never continue a drag after disable or permission loss.
+    }
+
+    private func finishActivationRecovery() {
+        guard let recovery = activationRecovery else { return }
+        activationRecovery = nil
+        hider.endOrganizerOperation(resume: false)
+        if recovery.mayBeDisplaced {
+            // A drag may have reached the server even when verification failed.
+            // Keep recovery reachable; never synthesize further input on cancel.
+            hider.revealForStatusItemRecovery()
+        } else {
+            hider.restoreAfterOrganizerActivation(recovery.state)
+        }
     }
 
     func setEditorVisible(_ visible: Bool) {
@@ -133,11 +164,15 @@ final class MenuBarOrganizerService: ObservableObject {
     @discardableResult
     private func snapshot(expected: UInt64) async -> MenuBarItemSnapshot? {
         guard (try? checkAccess()) != nil, let geometry = hider.organizerGeometry() else { return nil }
-        await provider.invalidateIdentityCache()
+        let refreshIdentities = needsIdentityRefresh
+        let revision = inventoryRevision
+        needsIdentityRefresh = false
         let snapshot = await provider.snapshot(hiddenDividerMidX: geometry.hidden.midX,
                                               alwaysHiddenDividerMidX: geometry.always?.midX,
-                                              excludedWindowIDs: geometry.excluded)
-        guard !Task.isCancelled, generation == expected, isRunning, AXIsProcessTrusted() else { return nil }
+                                              excludedWindowIDs: geometry.excluded,
+                                              refreshIdentities: refreshIdentities)
+        guard !Task.isCancelled, generation == expected, inventoryRevision == revision,
+              isRunning, AXIsProcessTrusted() else { return nil }
         // Failed scans are never used as candidates for input synthesis.
         items = snapshot.enumerationSucceeded ? snapshot.items.filter { MenuBarOrganizerPolicy.validFrame($0.frame) } : []
         return snapshot.enumerationSucceeded ? snapshot : nil
@@ -155,6 +190,7 @@ final class MenuBarOrganizerService: ObservableObject {
         do { try checkAccess() } catch { report(error); return }
         refreshTask?.cancel()
         refreshTask = nil
+        needsIdentityRefresh = true // Revalidate identities once before new input.
         isBusy = true // Reserve before scheduling so rapid drops cannot overlap.
         hider.beginOrganizerOperation()
         message = nil
@@ -208,7 +244,8 @@ final class MenuBarOrganizerService: ObservableObject {
     }
 
     private func relocate(id: MenuBarItemIdentity, before target: MenuBarItemIdentity?,
-                          to section: MenuBarOrganizerSection, expected: UInt64) async throws {
+                          to section: MenuBarOrganizerSection, expected: UInt64,
+                          requiresVisibleDestination: Bool = false) async throws {
         for attempt in 0..<2 {
             try checkAccess()
             guard await snapshot(expected: expected) != nil,
@@ -217,6 +254,11 @@ final class MenuBarOrganizerService: ObservableObject {
             guard item.isMovable else { throw MenuBarItemMoveError.itemNotMovable }
             let targetItem = try target.map { try uniqueItem($0, allowProtected: true) }
             if let targetItem, targetItem.section != section { throw MenuBarItemMoveError.itemUnavailable }
+            if requiresVisibleDestination {
+                guard let targetItem, let strip = visibleStrip(containing: geometry.hidden),
+                      MenuBarOrganizerPolicy.activationTarget(for: item, in: items, strip: strip)?.id == targetItem.id
+                else { throw MenuBarItemMoveError.itemUnavailable }
+            }
             let divider: CGRect?
             switch section {
             case .visible, .hidden: divider = geometry.hidden
@@ -230,7 +272,8 @@ final class MenuBarOrganizerService: ObservableObject {
             // A native item belongs to one menu bar; do not drag across displays.
             guard abs(destination.midY - item.frame.midY) < 8 else { throw MenuBarItemMoveError.itemUnavailable }
             try await mover.move(item: item, destinationFrame: quartzDestination,
-                                 placeAfter: targetItem == nil && section == .visible)
+                                 placeAfter: targetItem == nil && section == .visible,
+                                 onDragStart: { [weak self] in self?.activationRecovery?.mayBeDisplaced = true })
             try await Task.sleep(for: .milliseconds(180 + attempt * 80))
             guard await snapshot(expected: expected) != nil else { throw MenuBarItemMoveError.itemUnavailable }
             guard let refreshed = MenuBarOrganizerPolicy.uniquelyIdentified(id, in: items),
@@ -248,6 +291,8 @@ final class MenuBarOrganizerService: ObservableObject {
             guard let self else { return }
             panel?.close()
             let previousDisplayState = hider.organizerDisplayState
+            activationRecovery = (previousDisplayState, false)
+            defer { if generation == expected { finishActivationRecovery() } }
             hider.showAll(startTimer: false)
             try await Task.sleep(for: .milliseconds(180))
             guard await snapshot(expected: expected) != nil else { throw MenuBarItemMoveError.itemUnavailable }
@@ -257,10 +302,14 @@ final class MenuBarOrganizerService: ObservableObject {
             let neighbor = index + 1 < ordered.count ? ordered[index + 1].id : nil
             let moved = original.section != .visible
             if moved {
-                // Put the selected real item immediately right of the hidden
-                // divider, where the right-hand strip can accommodate it.
-                let firstVisible = MenuBarOrganizerSupport.orderedItems(items, in: .visible).first?.id
-                try await relocate(id: id, before: firstVisible, to: .visible, expected: expected)
+                // The first visible item can abut the notch on a crowded bar.
+                // Choose a reachable slot farther right before sending input.
+                guard let geometry = hider.organizerGeometry(),
+                      let strip = visibleStrip(containing: geometry.hidden),
+                      let target = MenuBarOrganizerPolicy.activationTarget(for: original, in: items, strip: strip)
+                else { throw MenuBarItemMoveError.itemUnavailable }
+                try await relocate(id: id, before: target.id, to: .visible, expected: expected,
+                                   requiresVisibleDestination: true)
             }
             try checkAccess()
             guard await snapshot(expected: expected) != nil else { throw MenuBarItemMoveError.itemUnavailable }
@@ -276,9 +325,20 @@ final class MenuBarOrganizerService: ObservableObject {
             }
             if moved {
                 try await relocate(id: id, before: neighbor, to: original.section, expected: expected)
+                activationRecovery?.mayBeDisplaced = false
             }
-            hider.restoreAfterOrganizerActivation(previousDisplayState)
         }
+    }
+
+    private func visibleStrip(containing divider: CGRect) -> CGRect? {
+        guard let primary = NSScreen.screens.first else { return nil }
+        let point = CGPoint(x: divider.midX, y: primary.frame.maxY - divider.midY)
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }) else { return nil }
+        let cocoa = screen.auxiliaryTopRightArea
+            ?? CGRect(x: screen.frame.minX, y: screen.frame.maxY - NSStatusBar.system.thickness,
+                      width: screen.frame.width, height: NSStatusBar.system.thickness)
+        return CGRect(x: cocoa.minX, y: primary.frame.maxY - cocoa.maxY,
+                      width: cocoa.width, height: cocoa.height)
     }
 
     private func onVisibleStrip(_ frame: CGRect) -> Bool {

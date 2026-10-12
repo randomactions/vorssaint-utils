@@ -14,18 +14,19 @@ final class MenuBarWindowProvider {
 
     private let bridge = MenuBarWindowServerBridge.self
     private let resolver = MenuBarItemSourceResolver()
+    @MainActor private var icons: [URL: NSImage] = [:]
     private let queue = DispatchQueue(label: "com.vorssaint.menu-bar-enumeration",
                                       qos: .utility)
 
     func snapshot(hiddenDividerMidX: CGFloat?,
                   alwaysHiddenDividerMidX: CGFloat?,
-                  excludedWindowIDs: Set<CGWindowID>) async -> MenuBarItemSnapshot {
+                  excludedWindowIDs: Set<CGWindowID>, refreshIdentities: Bool = false) async -> MenuBarItemSnapshot {
         guard MenuBarOrganizerPolicy.supportsAdvancedBackend else {
             return MenuBarItemSnapshot(items: [], capabilities: .unavailable, enumerationSucceeded: false)
         }
         let enumeration = await enumerate()
         let records = enumeration.records.filter { !excludedWindowIDs.contains($0.windowID) }
-        let sources = await resolver.resolve(records: records)
+        let sources = await resolver.resolve(records: records, refresh: refreshIdentities)
         let identities = MenuBarOrganizerSupport.identities(for: records, sources: sources)
         let currentPID = ProcessInfo.processInfo.processIdentifier
         let currentBundleIdentifier = Bundle.main.bundleIdentifier
@@ -48,7 +49,7 @@ final class MenuBarWindowProvider {
                     NSRunningApplication(processIdentifier: $0.pid)
                 }
                 let icon = sourceApp?.bundleURL.map {
-                    NSWorkspace.shared.icon(forFile: $0.path)
+                    cachedIcon(for: $0)
                 }
                 return ManagedMenuBarItem(
                     id: resolved.id,
@@ -90,8 +91,13 @@ final class MenuBarWindowProvider {
             enumerationSucceeded: enumeration.succeeded)
     }
 
-    func invalidateIdentityCache() async {
-        await resolver.invalidate()
+    @MainActor func invalidateIcons() { icons.removeAll() }
+
+    @MainActor private func cachedIcon(for url: URL) -> NSImage {
+        if let icon = icons[url] { return icon }
+        let icon = NSWorkspace.shared.icon(forFile: url.path)
+        icons[url] = icon
+        return icon
     }
 
     private func enumerate() async -> EnumerationResult {

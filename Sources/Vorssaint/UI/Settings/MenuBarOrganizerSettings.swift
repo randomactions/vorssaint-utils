@@ -138,7 +138,7 @@ struct MenuBarOrganizerSettings: View {
                         .contextMenu {
                             ForEach(MenuBarOrganizerSection.allCases) { destination in
                                 Button(title(destination)) { service.move(id: item.id, before: nil, to: destination) }
-                                    .disabled(!item.isMovable)
+                                    .disabled(!item.isMovable || destination == section)
                             }
                         }
                     }

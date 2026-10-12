@@ -22,14 +22,34 @@ actor MenuBarItemSourceResolver {
     }
 
     private var cache: [CGWindowID: MenuBarItemSourceIdentity] = [:]
+    private var cachedRecords: [CGWindowID: MenuBarOrganizerWindowRecord] = [:]
     private var scanTask: Task<[CGWindowID: MenuBarItemSourceIdentity], Never>?
     private var scanID: UUID?
+    private var scanRecords: [MenuBarOrganizerWindowRecord] = []
+    private let scanner: @Sendable ([MenuBarOrganizerWindowRecord]) async -> [CGWindowID: MenuBarItemSourceIdentity]
+    private let isTrusted: @Sendable () -> Bool
+
+    init(isTrusted: @escaping @Sendable () -> Bool = { AXIsProcessTrusted() },
+         scanner: @escaping @Sendable ([MenuBarOrganizerWindowRecord]) async -> [CGWindowID: MenuBarItemSourceIdentity] = { await MenuBarItemSourceResolver.scanHosted(records: $0) }) {
+        self.isTrusted = isTrusted
+        self.scanner = scanner
+    }
 
     func resolve(
-        records: [MenuBarOrganizerWindowRecord]
+        records: [MenuBarOrganizerWindowRecord], refresh: Bool = false
     ) async -> [CGWindowID: MenuBarItemSourceIdentity] {
-        let liveWindowIDs = Set(records.map(\.windowID))
-        cache = cache.filter { liveWindowIDs.contains($0.key) }
+        if refresh { invalidate() }
+        guard !Task.isCancelled else { return [:] }
+        // Geometry changes during our own drag do not change a window's owner.
+        // Reused IDs or changed titles must be resolved again. App lifecycle,
+        // permission and display changes also invalidate the whole inventory.
+        let reusableIDs = Set(records.filter { record in
+            guard let old = cachedRecords[record.windowID] else { return false }
+            return old.ownerPID == record.ownerPID && old.ownerBundleIdentifier == record.ownerBundleIdentifier
+                && old.title == record.title
+        }.map(\.windowID))
+        cache = cache.filter { reusableIDs.contains($0.key) }
+        cachedRecords = Dictionary(uniqueKeysWithValues: records.map { ($0.windowID, $0) })
 
         var result = cache
         let unresolvedHosted = records.filter {
@@ -51,7 +71,37 @@ actor MenuBarItemSourceResolver {
             cache[record.windowID] = source
         }
 
-        guard !unresolvedHosted.isEmpty, AXIsProcessTrusted() else { return result }
+        if scanTask != nil, scanRecords != unresolvedHosted {
+            scanTask?.cancel()
+            scanTask = nil
+            scanID = nil
+            scanRecords = []
+        }
+        guard !unresolvedHosted.isEmpty, isTrusted() else { return result }
+        if scanTask == nil {
+            scanID = UUID()
+            scanRecords = unresolvedHosted
+            let scanner = self.scanner
+            scanTask = Task { await scanner(unresolvedHosted) }
+        }
+        guard let scanTask, let activeScanID = scanID else { return result }
+        let matches = await scanTask.value
+        // invalidate() can run while this actor awaits the scanner. Neither a
+        // cancelled caller nor an obsolete scan may return or cache identities.
+        guard scanID == activeScanID else { return [:] }
+        self.scanTask = nil
+        scanID = nil
+        scanRecords = []
+        guard !Task.isCancelled, !scanTask.isCancelled, isTrusted() else { return [:] }
+        let requestedIDs = Set(unresolvedHosted.map(\.windowID))
+        for (windowID, source) in matches where requestedIDs.contains(windowID) {
+            result[windowID] = source
+            cache[windowID] = source
+        }
+        return result
+    }
+
+    private static func scanHosted(records: [MenuBarOrganizerWindowRecord]) async -> [CGWindowID: MenuBarItemSourceIdentity] {
         let applications = await MainActor.run {
             NSWorkspace.shared.runningApplications.compactMap { app -> ApplicationRecord? in
                 guard !app.isTerminated else { return nil }
@@ -64,30 +114,19 @@ actor MenuBarItemSourceResolver {
                     name: app.localizedName ?? bundleID)
             }
         }
-        if scanTask == nil {
-            scanID = UUID()
-            scanTask = Task.detached(priority: .utility) {
-                Self.match(records: unresolvedHosted, applications: applications)
-            }
+        let task = Task.detached(priority: .utility) {
+            Self.match(records: records, applications: applications)
         }
-        guard let scanTask, let activeScanID = scanID else { return result }
-        let matches = await scanTask.value
-        if scanID == activeScanID {
-            self.scanTask = nil
-            scanID = nil
-        }
-        for (windowID, source) in matches {
-            result[windowID] = source
-            cache[windowID] = source
-        }
-        return result
+        return await withTaskCancellationHandler(operation: { await task.value }, onCancel: { task.cancel() })
     }
 
     func invalidate() {
         scanTask?.cancel()
         scanTask = nil
         scanID = nil
+        scanRecords = []
         cache.removeAll()
+        cachedRecords.removeAll()
     }
 
     private static func match(

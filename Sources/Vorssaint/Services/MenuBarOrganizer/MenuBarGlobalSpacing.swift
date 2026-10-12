@@ -13,20 +13,26 @@ enum MenuBarGlobalSpacing {
         let spacing: Int?
         let padding: Int?
     }
-    static var hasSavedValues: Bool { UserDefaults.standard.data(forKey: restoreKey) != nil }
+    static var hasSavedValues: Bool { UserDefaults.standard.object(forKey: restoreKey) != nil }
     static func sanitized(_ value: Int) -> Int { min(32, max(4, value)) }
 
     static func apply(spacing: Int, defaults: UserDefaults = .standard,
                       read: () -> Saved = readCurrent,
                       write: (Saved) -> Bool = writeCurrent) -> Bool {
         let before = read()
-        if defaults.data(forKey: restoreKey) == nil {
+        let hadSavedValues = defaults.object(forKey: restoreKey) != nil
+        if hadSavedValues {
+            guard let data = defaults.data(forKey: restoreKey),
+                  (try? JSONDecoder().decode(Saved.self, from: data)) != nil else { return false }
+        } else {
             guard let data = try? JSONEncoder().encode(before) else { return false }
             defaults.set(data, forKey: restoreKey)
         }
         let value = sanitized(spacing)
         guard write(Saved(spacing: value, padding: value)) else {
-            _ = write(before)
+            // A failed write may have partially changed the global domain.
+            // Forget a new journal only after rollback confirms recovery.
+            if write(before), !hadSavedValues { defaults.removeObject(forKey: restoreKey) }
             return false
         }
         return true

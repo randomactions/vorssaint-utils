@@ -58,6 +58,26 @@ enum MenuBarOrganizerPolicy {
         return ordered[index + 1].windowID == targetID
     }
 
+    /// Inserting before an item leaves that item's right-anchored position
+    /// unchanged. Reserve the selected item's whole width plus a drag margin,
+    /// avoiding the notch, another display, and ambiguous destination identities.
+    static func activationTarget(for item: ManagedMenuBarItem, in items: [ManagedMenuBarItem],
+                                 strip: CGRect) -> ManagedMenuBarItem? {
+        orderedActivationCandidates(items).first { candidate in
+            guard candidate.id != item.id,
+                  uniquelyIdentified(candidate.id, in: items, allowProtected: true) != nil,
+                  abs(candidate.frame.midY - item.frame.midY) < 8 else { return false }
+            let space = CGRect(x: candidate.frame.minX - item.frame.width - 2,
+                               y: candidate.frame.minY, width: item.frame.width + 2,
+                               height: item.frame.height)
+            return strip.contains(candidate.frame) && strip.contains(space)
+        }
+    }
+
+    private static func orderedActivationCandidates(_ items: [ManagedMenuBarItem]) -> [ManagedMenuBarItem] {
+        Array(MenuBarOrganizerSupport.orderedItems(items, in: .visible).reversed())
+    }
+
     static func isOwnItem(ownerPID: pid_t, sourcePID: pid_t?, bundleIdentifier: String,
                           currentPID: pid_t, currentBundleIdentifier: String?) -> Bool {
         ownerPID == currentPID || sourcePID == currentPID

@@ -106,8 +106,11 @@ enum MenuBarOrganizerTests {
         }
         suite.expect(!MenuBarGlobalSpacing.apply(spacing: 4, defaults: defaults, read: { current }, write: failingWrite)
                      && current == initial, "failed synchronization rolls back both original values")
-        suite.expect(defaults.data(forKey: MenuBarGlobalSpacing.restoreKey) != nil,
-                     "failed Apply keeps the recoverable original snapshot")
+        suite.expect(defaults.data(forKey: MenuBarGlobalSpacing.restoreKey) == nil,
+                     "a first Apply with successful rollback leaves no phantom recovery transaction")
+        suite.expect(!MenuBarGlobalSpacing.apply(spacing: 4, defaults: defaults, read: { current }, write: { _ in false })
+                     && defaults.data(forKey: MenuBarGlobalSpacing.restoreKey) != nil,
+                     "failed Apply and failed rollback keep the only recovery snapshot")
         _ = MenuBarGlobalSpacing.apply(spacing: 12, defaults: defaults, read: { current }, write: write)
         let applied = current
         failedOnce = false
@@ -126,11 +129,33 @@ enum MenuBarOrganizerTests {
                      && writes.isEmpty, "uninstall with no spacing transaction never changes global preferences")
         for malformed: Any in [Data("broken".utf8), "not data", 42] {
             defaults.set(malformed, forKey: MenuBarGlobalSpacing.restoreKey)
+            suite.expect(!MenuBarGlobalSpacing.apply(spacing: 7, defaults: defaults, read: { current }, write: write)
+                         && writes.isEmpty,
+                         "Apply refuses malformed existing recovery instead of overwriting it or changing global values")
             suite.expect(!MenuBarGlobalSpacing.restoreForRemoval(defaults: defaults, read: { current }, write: write)
                          && defaults.object(forKey: MenuBarGlobalSpacing.restoreKey) != nil && writes.isEmpty,
                          "malformed recovery stops uninstall without clearing evidence or guessing global values")
         }
         defaults.removeObject(forKey: MenuBarGlobalSpacing.restoreKey)
+        let original = item(id: "hidden", window: 10, x: 700)
+        let crowded = item(id: "edge", window: 11, x: 1010, section: .visible)
+        let reachable = item(id: "right", window: 12, x: 1500, protected: true, section: .visible)
+        let strip = CGRect(x: 1010, y: 0, width: 790, height: 24)
+        suite.expect(MenuBarOrganizerPolicy.activationTarget(for: original, in: [original, crowded, reachable], strip: strip)?.id == reachable.id,
+                     "crowded notch activation uses a reachable right-hand neighbor, including a protected anchor")
+        suite.expect(MenuBarOrganizerPolicy.activationTarget(for: original, in: [original, crowded], strip: strip) == nil,
+                     "activation refuses an insertion overlapping the notch")
+        let otherDisplay = item(id: "other", window: 13, x: 2200, section: .visible)
+        suite.expect(MenuBarOrganizerPolicy.activationTarget(for: original, in: [original, otherDisplay], strip: strip) == nil,
+                     "a same-height item on another display is not an activation destination")
+        let duplicateTarget = item(id: "right", window: 14, x: 1600, occurrence: 1, section: .visible)
+        suite.expect(MenuBarOrganizerPolicy.activationTarget(for: original, in: [original, reachable, duplicateTarget], strip: strip) == nil,
+                     "ambiguous neighbors cannot authorize an activation drag")
+        suite.expect(MenuBarHiderAccessibility.hostPIDs(currentPID: 10, runningPIDs: {
+            $0 == "com.apple.controlcenter" ? [20] : [30, 20]
+        }) == [10, 20, 30], "separator lookup covers native and system-hosted controls without duplicate scans")
+        suite.expect(MenuBarHiderAccessibility.hostPIDs(currentPID: 10, runningPIDs: { _ in [] }) == [10],
+                     "separator measurement still supports macOS versions with native app-owned status items")
         suite.expect(!SettingsBackupSupport.exportKeys().contains(MenuBarGlobalSpacing.restoreKey),
                      "another Mac's global spacing transaction is never imported")
         for key in [DefaultsKey.menuBarOrganizerAdvanced, DefaultsKey.menuBarOrganizerSpacing,
@@ -156,11 +181,12 @@ enum MenuBarOrganizerTests {
     }
 
     private static func item(id: String, window: CGWindowID, x: CGFloat, occurrence: Int = 0,
-                             provisional: Bool = false, protected: Bool = false) -> ManagedMenuBarItem {
+                             provisional: Bool = false, protected: Bool = false,
+                             section: MenuBarOrganizerSection = .hidden) -> ManagedMenuBarItem {
         ManagedMenuBarItem(id: .init(bundleIdentifier: "test.app", title: id, occurrence: occurrence),
                            windowID: window, ownerPID: 42, ownerBundleIdentifier: "test.app", sourcePID: 42,
                            ownerName: "Test", sourceName: "Test", bundleIdentifier: "test.app", title: id,
-                           frame: CGRect(x: x, y: 0, width: 20, height: 24), section: .hidden,
+                           frame: CGRect(x: x, y: 0, width: 20, height: 24), section: section,
                            identityState: provisional ? .provisional : .stable, isMovable: !protected,
                            isProtected: protected, image: nil)
     }

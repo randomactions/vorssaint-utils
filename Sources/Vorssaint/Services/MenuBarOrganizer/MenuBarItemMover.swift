@@ -25,7 +25,8 @@ final class MenuBarItemMover {
 
     func move(item: ManagedMenuBarItem,
               destinationFrame: CGRect,
-              placeAfter: Bool) async throws {
+              placeAfter: Bool,
+              onDragStart: (() -> Void)? = nil) async throws {
         guard MenuBarOrganizerPolicy.supportsAdvancedBackend else { throw MenuBarItemMoveError.itemUnavailable }
         try Task.checkCancellation()
         guard AXIsProcessTrusted() else { throw MenuBarItemMoveError.permissionMissing }
@@ -72,7 +73,8 @@ final class MenuBarItemMover {
         try await postCommandDrag(
             from: CGPoint(x: item.frame.midX, y: item.frame.midY),
             to: end,
-            targetPID: targetPID)
+            targetPID: targetPID,
+            onDragStart: onDragStart)
     }
 
     func click(item: ManagedMenuBarItem) async throws {
@@ -135,7 +137,8 @@ final class MenuBarItemMover {
 
     private func postCommandDrag(from start: CGPoint,
                                  to end: CGPoint,
-                                 targetPID: pid_t) async throws {
+                                 targetPID: pid_t,
+                                 onDragStart: (() -> Void)?) async throws {
         guard let source = CGEventSource(stateID: .hidSystemState),
               let down = CGEvent(mouseEventSource: source,
                                  mouseType: .leftMouseDown,
@@ -156,6 +159,7 @@ final class MenuBarItemMover {
 
         CGWarpMouseCursorPosition(start)
         inputCleanup.release = { [weak self] in self?.post(up, targetPID: targetPID) }
+        onDragStart?()
         post(down, targetPID: targetPID)
         do {
             try await Task.sleep(for: .milliseconds(18))
