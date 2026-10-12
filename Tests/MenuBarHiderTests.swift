@@ -49,8 +49,8 @@ enum MenuBarHiderTests {
         defaults.removeObject(forKey: normalPositionKey)
         defaults.removeObject(forKey: permanentPositionKey)
 
-        let resting = CGRect(x: 900, y: 0, width: 10, height: 24)
-        let crossed = CGRect(x: 1000, y: 0, width: 12, height: 24)
+        let resting = CGRect(x: 900, y: 0, width: 1, height: 24)
+        let crossed = CGRect(x: 1000, y: 0, width: 1, height: 24)
         suite.expect(MenuBarHiderSupport.renderedSeparatorRolesSwapped(normal: resting, permanent: crossed) == true,
                      "resting separators crossed by a drag swap their roles")
         // An expanded separator relocated past the notch reads as crossed.
@@ -82,33 +82,31 @@ enum MenuBarHiderTests {
         suite.expect(MenuBarHiderSupport.separatorLength(state: .collapsed, usableWidth: 790)
                 == MenuBarHiderSupport.expansionLength(for: 790), "collapsed separator is expanded")
         suite.expect(MenuBarHiderSupport.separatorLength(state: .expanded, usableWidth: 1920) == MenuBarHiderSupport.normalSeparatorWidth, "expanded separator has normal width")
-        suite.expect(MenuBarHiderSupport.separatorLength(state: .showAll, usableWidth: 1920) == MenuBarHiderSupport.normalSeparatorWidth, "showAll separator has normal width")
 
-        suite.expect(MenuBarHiderSupport.alwaysHiddenLength(state: .showAll, usableWidth: 1920, isEnabled: false) == 0.0, "disabled always-hidden item has zero length")
         suite.expect(MenuBarHiderSupport.alwaysHiddenLength(state: .expanded, usableWidth: 790, isEnabled: true)
                 == MenuBarHiderSupport.expansionLength(for: 790), "always-hidden stays collapsed during normal expansion")
-        suite.expect(MenuBarHiderSupport.alwaysHiddenLength(state: .showAll, usableWidth: 1920, isEnabled: true) == MenuBarHiderSupport.normalAlwaysHiddenWidth, "always-hidden shows normal width on showAll")
 
-        suite.expect(MenuBarHiderSupport.toggleSymbolName(isCollapsed: true, style: .chevron) == "chevron.left", "collapsed chevron toggle shows chevron.left")
-        suite.expect(MenuBarHiderSupport.toggleSymbolName(isCollapsed: false, style: .chevron) == "chevron.right", "expanded chevron toggle shows chevron.right")
-        suite.expect(MenuBarHiderSupport.toggleSymbolName(isCollapsed: true, style: .dots) == "ellipsis.circle", "collapsed dots toggle shows ellipsis.circle")
-        suite.expect(MenuBarHiderSupport.toggleSymbolName(isCollapsed: false, style: .dots) == "ellipsis.circle.fill", "expanded dots toggle shows ellipsis.circle.fill")
-        suite.expect(MenuBarHiderSupport.toggleSymbolName(isCollapsed: true, style: .eye) == "eye.slash", "collapsed eye toggle shows eye.slash")
-        suite.expect(MenuBarHiderSupport.toggleSymbolName(isCollapsed: false, style: .eye) == "eye", "expanded eye toggle shows eye")
-        // The tooltip picks a localized string rather than building English, so
-        // the check is which field each state selects, in every language.
+        for style in MenuBarHiderIconStyle.allCases {
+            suite.expect(MenuBarHiderSupport.toggleSymbolName(isCollapsed: true, style: style) == "circle"
+                         && MenuBarHiderSupport.toggleSymbolName(isCollapsed: false, style: style) == "circle",
+                         "every saved style uses a hollow circle in both states")
+        }
+        for state in [MenuBarHiderSupport.DisplayState.collapsed, .expanded] {
+            for legacyEnabled in [true, false] {
+                suite.expect(MenuBarHiderSupport.alwaysHiddenLength(state: state, usableWidth: 790, isEnabled: legacyEnabled)
+                             == MenuBarHiderSupport.expansionLength(for: 790),
+                             "Always Hidden stays concealed regardless of display mode or legacy preference")
+            }
+        }
         for lang in AppLanguage.allCases {
             let t = FeatureStrings.menuBarHider(lang)
-            suite.expect(MenuBarHiderSupport.toggleTooltip(isCollapsed: true, isShowingAll: false, alwaysHiddenEnabled: false, strings: t) == t.tooltipExpand,
-                   "collapsed toggle uses the expand tooltip for \(lang)")
-            suite.expect(MenuBarHiderSupport.toggleTooltip(isCollapsed: true, isShowingAll: false, alwaysHiddenEnabled: true, strings: t) == t.tooltipExpand,
-                   "collapsed toggle uses the expand tooltip with always-hidden on for \(lang)")
-            suite.expect(MenuBarHiderSupport.toggleTooltip(isCollapsed: false, isShowingAll: false, alwaysHiddenEnabled: false, strings: t) == t.tooltipCollapse,
-                   "expanded toggle uses the plain collapse tooltip for \(lang)")
-            suite.expect(MenuBarHiderSupport.toggleTooltip(isCollapsed: false, isShowingAll: false, alwaysHiddenEnabled: true, strings: t) == t.tooltipCollapseShowAll,
-                   "expanded toggle offers show-all when always-hidden is on for \(lang)")
-            suite.expect(MenuBarHiderSupport.toggleTooltip(isCollapsed: false, isShowingAll: true, alwaysHiddenEnabled: true, strings: t) == t.tooltipCollapseHideAlways,
-                   "showing-all toggle offers hiding the always-hidden section for \(lang)")
+            suite.expect(MenuBarHiderSupport.toggleTooltip(isCollapsed: true, strings: t) == t.tooltipExpand,
+                         "collapsed circle describes showing Hidden icons")
+            suite.expect(MenuBarHiderSupport.toggleTooltip(isCollapsed: false, strings: t) == t.tooltipCollapse,
+                         "expanded circle describes hiding Hidden icons")
+            for field in Mirror(reflecting: FeatureStrings.menuBarEditor(lang)).children {
+                suite.expect(!(field.value as! String).isEmpty, "editor labels are localized for \(lang)")
+            }
         }
 
         for interval in [0.18, 0.5, 1.2] {

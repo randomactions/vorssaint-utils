@@ -36,7 +36,6 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
     private var didExpandFromHover = false
     private var pointerLeftToggleAt: TimeInterval?
     private let hotkey = QuickToolHotkey(id: 30)
-    private var isShowingAll: Bool = false
     private var trackingArea: NSTrackingArea?
     private weak var trackingButton: NSStatusBarButton?
     private var scrollMonitor: Any?
@@ -51,9 +50,6 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
     private var lastObservedPlacement: [Double?]?
     private var lastScrollToggleTime: TimeInterval = 0
     private var lastToggleClickTimestamp: TimeInterval = 0
-    private var didRevealInClickSequence = false
-    private var pendingClickTimer: Timer?
-    private var pendingClickGeneration: UInt64 = 0
 
     override private init() {
         super.init()
@@ -81,7 +77,6 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
         NotificationCenter.default.removeObserver(self)
         autoCollapseTimer?.invalidate()
         hoverWatchdogTimer?.invalidate()
-        pendingClickTimer?.invalidate()
         removeScrollMonitor()
         removeSeparatorDragMonitor()
     }
@@ -117,16 +112,43 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
     // advanced backend, and AppKit coordinates anchor its floating panel.
     var organizerAnchor: CGRect? { toggleItem?.button?.window?.frame }
 
-    func organizerGeometry() -> (hidden: CGRect, always: CGRect?, excluded: Set<CGWindowID>)? {
+    func organizerGeometry() async -> (hidden: CGRect, always: CGRect?, excluded: Set<CGWindowID>)? {
         guard isEnabled, MenuBarOrganizerPolicy.supportsAdvancedBackend else { return nil }
         func windowID(_ item: NSStatusItem?) -> CGWindowID? {
             item?.button?.window.flatMap { MenuBarHiderSupport.statusWindowID($0.windowNumber) }
         }
         let ids = [windowID(toggleItem), windowID(physicalSeparatorItem), windowID(physicalAlwaysHiddenItem)]
-        guard let hiddenID = windowID(separatorItem),
-              let hidden = MenuBarWindowServerBridge.frame(of: hiddenID) else { return nil }
-        let always = windowID(alwaysHiddenItem).flatMap { MenuBarWindowServerBridge.frame(of: $0) }
-        return (hidden, always, Set(ids.compactMap { $0 }))
+        if let hiddenID = windowID(separatorItem), let alwaysID = windowID(alwaysHiddenItem),
+           let hidden = MenuBarWindowServerBridge.frame(of: hiddenID),
+           let always = MenuBarWindowServerBridge.frame(of: alwaysID) {
+            return (hidden, always, Set(ids.compactMap { $0 }))
+        }
+        // System-hosted status items can have placeholder NSWindow numbers.
+        // Resolve our labelled controls through AX instead of using cached frames.
+        guard AXIsProcessTrusted(),
+              let normalHelp = separatorItem?.button?.toolTip,
+              let permanentHelp = alwaysHiddenItem?.button?.toolTip else { return nil }
+        let pids = MenuBarHiderAccessibility.hostPIDs(
+            currentPID: ProcessInfo.processInfo.processIdentifier,
+            runningPIDs: { NSRunningApplication.runningApplications(withBundleIdentifier: $0).map(\.processIdentifier) })
+        let expectedGeneration = separatorMeasurementGeneration
+        let expectedRoles = separatorRolesSwapped
+        let positions = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                continuation.resume(returning: MenuBarHiderAccessibility.separatorPositions(
+                    pids: pids, normalHelp: normalHelp, permanentHelp: permanentHelp))
+            }
+        }
+        guard isEnabled, !Task.isCancelled, expectedGeneration == separatorMeasurementGeneration,
+              expectedRoles == separatorRolesSwapped, let positions,
+              MenuBarOrganizerPolicy.validFrame(positions.normal),
+              MenuBarOrganizerPolicy.validFrame(positions.permanent) else { return nil }
+        var excluded = Set(ids.compactMap { $0 })
+        for id in MenuBarWindowServerBridge.menuBarWindowIDs() ?? [] {
+            guard let frame = MenuBarWindowServerBridge.frame(of: id) else { continue }
+            if frame == positions.normal || frame == positions.permanent { excluded.insert(id) }
+        }
+        return (positions.normal, positions.permanent, excluded)
     }
 
     func resumeAfterOrganizerOperation() {
@@ -144,7 +166,6 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
 
     func beginOrganizerOperation() {
         organizerHoldsExpansion = true
-        cancelPendingClick()
         stopAutoCollapseTimer()
         stopHoverWatchdog()
         didExpandFromHover = false
@@ -156,7 +177,7 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
     }
 
     var organizerDisplayState: MenuBarHiderSupport.DisplayState {
-        isCollapsed ? .collapsed : (isShowingAll ? .showAll : .expanded)
+        isCollapsed ? .collapsed : .expanded
     }
 
     func restoreAfterOrganizerActivation(_ state: MenuBarHiderSupport.DisplayState) {
@@ -165,7 +186,6 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
         switch state {
         case .collapsed: collapse()
         case .expanded: expand()
-        case .showAll: showAll()
         }
     }
 
@@ -201,7 +221,6 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
     }
 
     private func installOrUpdateItems() {
-        let alwaysHiddenEnabled = UserDefaults.standard.bool(forKey: DefaultsKey.menuBarHiderAlwaysHiddenEnabled)
         var didCreateToggle = false
 
         // 1. Toggle Item
@@ -223,22 +242,13 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
             physicalSeparatorItem = item
         }
 
-        // 3. Always Hidden Separator Item
-        if alwaysHiddenEnabled {
-            if physicalAlwaysHiddenItem == nil {
-                let item = NSStatusBar.system.statusItem(withLength: CGFloat(MenuBarHiderSupport.normalAlwaysHiddenWidth))
-                item.autosaveName = MenuBarHiderSupport.alwaysHiddenAutosaveName
-                item.behavior = []
-                item.isVisible = true
-                physicalAlwaysHiddenItem = item
-            }
-        } else {
-            separatorRolesSwapped = false
-            UserDefaults.standard.removeObject(forKey: Self.swappedRolesKey)
-            if let physicalAlwaysHiddenItem {
-                NSStatusBar.system.removeStatusItem(physicalAlwaysHiddenItem)
-                self.physicalAlwaysHiddenItem = nil
-            }
+        // The third category is always present, including with legacy preferences.
+        if physicalAlwaysHiddenItem == nil {
+            let item = NSStatusBar.system.statusItem(withLength: CGFloat(MenuBarHiderSupport.normalAlwaysHiddenWidth))
+            item.autosaveName = MenuBarHiderSupport.alwaysHiddenAutosaveName
+            item.behavior = []
+            item.isVisible = true
+            physicalAlwaysHiddenItem = item
         }
 
         // Pick the collapse state back up from the previous run, but only when
@@ -246,7 +256,6 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
         // settings change and must not clobber the state on screen right now.
         if didCreateToggle {
             isCollapsed = UserDefaults.standard.bool(forKey: DefaultsKey.menuBarHiderCollapsed)
-            isShowingAll = false
         }
 
         repairSeparatorOrder()
@@ -308,7 +317,6 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
         guard isEnabled, active != isReorderingItems else { return }
         isReorderingItems = active
         if active {
-            cancelPendingClick()
             stopAutoCollapseTimer()
             stopHoverWatchdog()
         }
@@ -354,17 +362,13 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
         applyFallbackSeparatorOrder()
     }
 
-    /// Without rendered geometry: remembered placement, then the status
-    /// windows, which are only reliable while every section is on screen.
+    /// Widened spacer windows are not reliable evidence of placement.
+    /// Use remembered ordering when rendered geometry cannot establish it.
     private func applyFallbackSeparatorOrder() {
         if let swapped = MenuBarHiderSupport.preferredSeparatorRolesSwapped(in: UserDefaults.standard) {
             applySeparatorOrder(swapped: swapped)
             return
         }
-        guard isShowingAll, let normal = physicalSeparatorItem, let permanent = physicalAlwaysHiddenItem,
-              let normalX = visibleStatusItemX(normal),
-              let permanentX = visibleStatusItemX(permanent) else { return }
-        applySeparatorOrder(swapped: normalX < permanentX)
     }
 
     private func applySeparatorOrder(swapped: Bool) {
@@ -442,69 +446,32 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
         return rect.midX
     }
 
-
     private func configureItemButtons() {
-        let style = currentIconStyle
         let strings = FeatureStrings.menuBarHider(L10n.shared.language)
-        let alwaysHiddenEnabled = UserDefaults.standard.bool(forKey: DefaultsKey.menuBarHiderAlwaysHiddenEnabled)
-
-        // 1. Toggle button (Always on the right)
-        if let toggleButton = toggleItem?.button {
-            toggleButton.target = self
-            toggleButton.action = #selector(toggleClicked)
-            toggleButton.sendAction(on: [.leftMouseUp, .rightMouseUp])
-            // A symbol name the running system does not ship resolves to nil,
-            // and a variable-length item with neither image nor title collapses
-            // to zero width — the toggle would simply vanish. Fall back to the
-            // chevron, and to a text glyph if even that is unavailable.
-            let symbolName = MenuBarHiderSupport.toggleSymbolName(isCollapsed: isCollapsed, style: style)
-            let fallbackName = MenuBarHiderSupport.toggleSymbolName(isCollapsed: isCollapsed, style: .chevron)
-            let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: strings.pageTitle)
-                ?? NSImage(systemSymbolName: fallbackName, accessibilityDescription: strings.pageTitle)
-            if let image {
-                image.isTemplate = true
-                toggleButton.image = image
-                toggleButton.title = ""
-            } else {
-                toggleButton.image = nil
-                toggleButton.title = isCollapsed ? "‹" : "›"
-            }
-            toggleButton.toolTip = MenuBarHiderSupport.toggleTooltip(
-                isCollapsed: isCollapsed,
-                isShowingAll: isShowingAll,
-                alwaysHiddenEnabled: alwaysHiddenEnabled,
-                strings: strings
-            )
+        if let button = toggleItem?.button {
+            button.target = self
+            button.action = #selector(toggleClicked)
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            let image = NSImage(systemSymbolName: "circle", accessibilityDescription: strings.pageTitle)
+            image?.isTemplate = true
+            button.image = image
+            button.title = image == nil ? "○" : ""
+            button.toolTip = MenuBarHiderSupport.toggleTooltip(isCollapsed: isCollapsed, strings: strings)
+            button.setAccessibilityLabel(button.toolTip)
             setupTrackingArea()
         }
-
-        // 2. Main separator (To the left of toggle)
-        if let separatorButton = separatorItem?.button {
-            separatorButton.target = self
-            separatorButton.action = #selector(separatorClicked)
-            separatorButton.sendAction(on: [.leftMouseUp])
-            separatorButton.image = nil
-            separatorButton.title = "|"
-            separatorButton.alignment = .right
-            separatorButton.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-            separatorButton.toolTip = strings.tooltipSeparator
-        }
-
-        // 3. Always hidden separator (Leftmost)
-        if let alwaysHiddenButton = alwaysHiddenItem?.button {
-            alwaysHiddenButton.target = self
-            alwaysHiddenButton.action = #selector(alwaysHiddenClicked)
-            alwaysHiddenButton.sendAction(on: [.leftMouseUp])
-            alwaysHiddenButton.image = nil
-            alwaysHiddenButton.title = "‖"
-            alwaysHiddenButton.alignment = .right
-            alwaysHiddenButton.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
-            alwaysHiddenButton.toolTip = strings.tooltipAlwaysHidden
+        // Native spacer items do the concealment; the circle is the only control.
+        for (item, label) in [(separatorItem, strings.diagramHidden),
+                              (alwaysHiddenItem, strings.diagramAlwaysHidden)] {
+            item?.button?.target = nil
+            item?.button?.action = nil
+            item?.button?.image = nil
+            item?.button?.title = ""
+            item?.button?.toolTip = "\(strings.pageTitle) — \(label)"
         }
     }
 
     private func teardown() {
-        cancelPendingClick()
         separatorMeasurementGeneration &+= 1
         separatorMeasurementPending = false
         hotkey.unregister()
@@ -531,7 +498,6 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
             self.physicalAlwaysHiddenItem = nil
         }
         isCollapsed = false
-        isShowingAll = false
         isConfiguring = false
     }
 
@@ -555,7 +521,6 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
     }
 
     func expand(startTimer: Bool = true) {
-        cancelPendingClick()
         guard isEnabled, !organizerHoldsExpansion else { return }
         repairSeparatorOrder()
         recoveryHoldsExpansion = false
@@ -563,7 +528,6 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
         didExpandFromHover = false
         let wasCollapsed = isCollapsed
         isCollapsed = false
-        isShowingAll = false
         updateItemAppearances()
         persistCollapsedState()
         if wasCollapsed {
@@ -578,16 +542,14 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
     }
 
     func collapse() {
-        cancelPendingClick()
         guard isEnabled, !organizerHoldsExpansion else { return }
         recoveryHoldsExpansion = false
         repairSeparatorOrder()
-        let wasExpanded = !isCollapsed || isShowingAll
+        let wasExpanded = !isCollapsed
         stopAutoCollapseTimer()
         stopHoverWatchdog()
         didExpandFromHover = false
         isCollapsed = true
-        isShowingAll = false
         updateItemAppearances()
         persistCollapsedState()
         if wasExpanded {
@@ -595,37 +557,22 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
         }
     }
 
-    func showAll(startTimer: Bool = true) {
-        cancelPendingClick()
+    func prepareForOrganizerOperation() {
         guard isEnabled else { return }
-        recoveryHoldsExpansion = false
+        stopAutoCollapseTimer()
         stopHoverWatchdog()
         didExpandFromHover = false
         isCollapsed = false
-        isShowingAll = true
         updateItemAppearances()
-        DispatchQueue.main.async { [weak self] in self?.repairSeparatorOrder() }
         persistCollapsedState()
-        triggerHapticFeedback()
-
-        if startTimer && !isConfiguring {
-            restartAutoCollapseTimerIfNeeded()
-        } else {
-            stopAutoCollapseTimer()
-        }
     }
 
     func beginConfigurationMode() {
-        cancelPendingClick()
         guard isEnabled else { return }
+        // Editing never reveals either category or changes the saved display mode.
         isConfiguring = true
+        recoveryHoldsExpansion = false
         stopAutoCollapseTimer()
-        let alwaysHiddenEnabled = UserDefaults.standard.bool(forKey: DefaultsKey.menuBarHiderAlwaysHiddenEnabled)
-        if alwaysHiddenEnabled {
-            showAll(startTimer: false)
-        } else {
-            expand(startTimer: false)
-        }
     }
 
     func endConfigurationMode() {
@@ -636,31 +583,21 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
         }
     }
 
-    /// An explicit icon recovery keeps the bar open until the next deliberate
-    /// toggle or configuration session, including intervening preference syncs.
+    /// Keep Hidden reachable after failed input. Always Hidden stays concealed.
     func revealForStatusItemRecovery() {
         guard isEnabled else { return }
-        showAll(startTimer: false)
+        prepareForOrganizerOperation()
         recoveryHoldsExpansion = true
     }
 
-    /// Carries the collapse state across relaunches. `isShowingAll` deliberately
-    /// does not persist: revealing the always-hidden section is a momentary
-    /// action, not a layout the app should come back in.
+    /// Carries the normal hidden section’s display state across relaunches.
     private func persistCollapsedState() {
         UserDefaults.standard.set(isCollapsed, forKey: DefaultsKey.menuBarHiderCollapsed)
     }
 
-    private var currentIconStyle: MenuBarHiderIconStyle {
-        let raw = UserDefaults.standard.string(forKey: DefaultsKey.menuBarHiderIconStyle) ?? ""
-        return MenuBarHiderIconStyle(rawValue: raw) ?? .chevron
-    }
 
     private var currentDisplayState: MenuBarHiderSupport.DisplayState {
-        if isShowingAll {
-            return .showAll
-        }
-        return isCollapsed ? .collapsed : .expanded
+        isCollapsed ? .collapsed : .expanded
     }
 
     /// Width of the menu bar strip the status items actually occupy. On a
@@ -680,9 +617,8 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
     private func updateItemAppearances() {
         configureItemButtons()
 
-        let state: MenuBarHiderSupport.DisplayState = isReorderingItems ? .showAll : currentDisplayState
+        let state: MenuBarHiderSupport.DisplayState = isReorderingItems ? .expanded : currentDisplayState
         let width = usableMenuBarWidth
-        let alwaysHiddenEnabled = UserDefaults.standard.bool(forKey: DefaultsKey.menuBarHiderAlwaysHiddenEnabled)
 
         toggleItem?.length = NSStatusItem.variableLength
 
@@ -694,7 +630,7 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
 
         // Update always-hidden separator length
         if let alwaysHiddenItem {
-            let length = MenuBarHiderSupport.alwaysHiddenLength(state: state, usableWidth: width, isEnabled: alwaysHiddenEnabled)
+            let length = MenuBarHiderSupport.alwaysHiddenLength(state: state, usableWidth: width, isEnabled: true)
             alwaysHiddenItem.length = CGFloat(length)
         }
     }
@@ -862,129 +798,36 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
         }
     }
 
-
     // MARK: - Actions
 
     @objc private func toggleClicked(_ sender: NSStatusBarButton) {
-        guard let event = NSApp.currentEvent else {
-            toggle()
-            return
-        }
-
-        // 1. Ignore clicks while holding Command (the user is dragging/reordering icons)
-        if event.modifierFlags.contains(.command) {
-            cancelPendingClick()
-            DispatchQueue.main.async { [weak self] in self?.repairSeparatorOrder() }
-            return
-        }
-
-        // 2. Right-click or Control+Click -> Context Menu
-        if event.type == .rightMouseUp || (event.type == .leftMouseUp && event.modifierFlags.contains(.control)) {
-            cancelPendingClick()
+        guard let event = NSApp.currentEvent else { toggle(); return }
+        if event.modifierFlags.contains(.command) { return }
+        if event.type == .rightMouseUp || event.modifierFlags.contains(.control) {
             showContextMenu(from: sender)
             return
         }
-
-        let alwaysHiddenEnabled = UserDefaults.standard.bool(forKey: DefaultsKey.menuBarHiderAlwaysHiddenEnabled)
-
-        // 3. Option+Click reveals the always-hidden section outright. It stays
-        //    out of the click-sequence bookkeeping below: it is a complete
-        //    gesture on its own, and a plain click right after it should still
-        //    collapse rather than be swallowed as a gesture tail.
-        if alwaysHiddenEnabled && event.modifierFlags.contains(.option) {
-            lastToggleClickTimestamp = event.timestamp
-            toggleAlwaysHiddenSection()
-            return
-        }
-
-        // Keep the native item in place until the gesture is resolved.
-        handleToggleClick(clickCount: event.clickCount, timestamp: event.timestamp,
-                          alwaysHiddenEnabled: alwaysHiddenEnabled)
+        // Option-click follows the same action; no gesture reveals Always Hidden.
+        handleToggleClick(clickCount: event.clickCount, timestamp: event.timestamp)
     }
 
-    private func handleToggleClick(clickCount: Int, timestamp: TimeInterval, alwaysHiddenEnabled: Bool) {
+    private func handleToggleClick(clickCount: Int, timestamp: TimeInterval) {
         guard isEnabled else { return }
-        let gap = timestamp - lastToggleClickTimestamp
+        let previous = lastToggleClickTimestamp
         lastToggleClickTimestamp = timestamp
-        let withinGesture = gap <= MenuBarHiderSupport.revealGestureInterval(
-            systemDoubleClickInterval: NSEvent.doubleClickInterval)
-
-        if withinGesture && didRevealInClickSequence { return }
-        // Do not require forwarded clicks to retain AppKit's clickCount.
-        // A pending first click and event timestamps identify the pair.
-        if alwaysHiddenEnabled, withinGesture, gap >= 0, pendingClickTimer != nil {
-            cancelPendingClick()
-            didRevealInClickSequence = true
-            toggleAlwaysHiddenSection()
-            return
-        }
-        cancelPendingClick()
-        didRevealInClickSequence = false
-        guard alwaysHiddenEnabled else {
-            performSingleClickToggle()
-            return
-        }
-        let generation = pendingClickGeneration
-        let timer = Timer(timeInterval: NSEvent.doubleClickInterval, repeats: false) { [weak self] _ in
-            self?.finishPendingClick(generation: generation)
-        }
-        pendingClickTimer = timer
-        RunLoop.main.add(timer, forMode: .common)
-    }
-
-    private func cancelPendingClick() {
-        pendingClickGeneration &+= 1
-        pendingClickTimer?.invalidate()
-        pendingClickTimer = nil
-    }
-
-    private func finishPendingClick(generation: UInt64) {
-        guard generation == pendingClickGeneration, pendingClickTimer != nil, isEnabled else { return }
-        cancelPendingClick()
-        performSingleClickToggle()
-    }
-
-    private func performSingleClickToggle() {
-        if isShowingAll {
-            collapse()
-        } else {
-            toggle()
-        }
-    }
-
-    private func toggleAlwaysHiddenSection() {
-        if isShowingAll {
-            expand()
-        } else {
-            showAll()
-        }
-    }
-
-    @objc private func separatorClicked(_ sender: NSStatusBarButton) {
-        guard let event = NSApp.currentEvent else {
-            toggle()
-            return
-        }
-        if event.modifierFlags.contains(.command) {
-            cancelPendingClick()
-            DispatchQueue.main.async { [weak self] in self?.repairSeparatorOrder() }
-            return
-        }
+        let gap = timestamp - previous
+        guard clickCount <= 1,
+              previous == 0 || gap < 0 || gap > NSEvent.doubleClickInterval else { return }
         toggle()
     }
 
-    @objc private func alwaysHiddenClicked(_ sender: NSStatusBarButton) {
-        guard let event = NSApp.currentEvent else {
-            toggleAlwaysHiddenSection()
-            return
-        }
-        if event.modifierFlags.contains(.command) {
-            cancelPendingClick()
-            DispatchQueue.main.async { [weak self] in self?.repairSeparatorOrder() }
-            return
-        }
-        toggleAlwaysHiddenSection()
-    }
+
+
+
+
+
+
+
 
     private func showContextMenu(from sender: NSStatusBarButton) {
         let strings = FeatureStrings.menuBarHider(L10n.shared.language)
@@ -1000,21 +843,7 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
             menu.addItem(collapseItem)
         }
 
-        let alwaysHiddenEnabled = UserDefaults.standard.bool(forKey: DefaultsKey.menuBarHiderAlwaysHiddenEnabled)
-        if alwaysHiddenEnabled {
-            if isShowingAll {
-                let hideAlwaysItem = NSMenuItem(title: strings.contextMenuHideAlways, action: #selector(contextMenuExpand), keyEquivalent: "")
-                hideAlwaysItem.target = self
-                menu.addItem(hideAlwaysItem)
-            } else {
-                let showAllItem = NSMenuItem(title: strings.contextMenuShowAll, action: #selector(contextMenuShowAll), keyEquivalent: "")
-                showAllItem.target = self
-                menu.addItem(showAllItem)
-            }
-        }
-
-        if UserDefaults.standard.bool(forKey: DefaultsKey.menuBarOrganizerAdvanced),
-           MenuBarOrganizerPolicy.supportsAdvancedBackend {
+        if MenuBarOrganizerPolicy.supportsAdvancedBackend {
             let advanced = FeatureStrings.menuBarOrganizer(L10n.shared.language)
             let drawer = NSMenuItem(title: advanced.drawer, action: #selector(contextMenuDrawer), keyEquivalent: "")
             drawer.target = self
@@ -1041,7 +870,6 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
 
     @objc private func contextMenuExpand() { expand() }
     @objc private func contextMenuCollapse() { collapse() }
-    @objc private func contextMenuShowAll() { showAll() }
 
     @objc private func contextMenuOpenSettings() {
         SettingsRouter.shared.request(FeatureSettingsDestination(.menuBarHider))

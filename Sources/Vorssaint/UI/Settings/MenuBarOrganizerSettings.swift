@@ -4,14 +4,144 @@
 import AppKit
 import SwiftUI
 
-/// Advanced settings remain in the existing hider destination and share the
-/// same cards, rows, spacing and permission controls as other Vorssaint pages.
-struct MenuBarOrganizerSettings: View {
+/// The three groups are always visible; permission gates actions, not discovery.
+struct MenuBarOrganizerEditor: View {
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var service = MenuBarOrganizerService.shared
     @ObservedObject private var permissions = Permissions.shared
     @AppStorage(DefaultsKey.menuBarHiderEnabled) private var hiderEnabled = false
-    @AppStorage(DefaultsKey.menuBarOrganizerAdvanced) private var advanced = false
+    @State private var pageVisible = false
+    @State private var query = ""
+    private var text: MenuBarOrganizerStrings { FeatureStrings.menuBarOrganizer(l10n.language) }
+    private var labels: MenuBarEditorStrings { FeatureStrings.menuBarEditor(l10n.language) }
+    private var hiderText: MenuBarHiderStrings { FeatureStrings.menuBarHider(l10n.language) }
+    private var canArrange: Bool { hiderEnabled && service.isRunning && permissions.accessibility && !service.isBusy }
+
+    var body: some View {
+        SettingsCard(title: text.arrange) {
+            Text(labels.inventory).font(.callout).foregroundStyle(.secondary)
+            if !MenuBarOrganizerPolicy.supportsAdvancedBackend {
+                Text(text.unsupported).font(.caption).foregroundStyle(.secondary)
+            } else if hiderEnabled && !permissions.accessibility {
+                PermissionRow(kind: .accessibility)
+                Text(text.permission).font(.caption).foregroundStyle(.secondary)
+            }
+            if !MenuBarOrganizerPolicy.conflictingManagers().isEmpty {
+                Text(text.conflict).font(.caption).foregroundStyle(.orange)
+            }
+            if service.inventoryUnavailable {
+                Text(labels.unavailable).font(.caption).foregroundStyle(.secondary)
+            }
+            HStack {
+                TextField(text.placeholder, text: $query).textFieldStyle(.roundedBorder)
+                Button(text.refresh) { service.refresh() }.disabled(!service.isRunning || service.isBusy)
+                Button(text.undo) { service.undoLastMove() }.disabled(!canArrange || !service.canUndo)
+            }
+            HStack(alignment: .top, spacing: 10) {
+                ForEach(MenuBarOrganizerSection.allCases) { section in
+                    category(section)
+                }
+            }
+            HStack {
+                Button(text.drawer) { service.showDrawer() }
+                Button(text.search) { service.showDrawer(search: true) }
+                if service.isBusy { ProgressView().controlSize(.small) }
+                Spacer()
+            }
+            .disabled(!canArrange)
+            if let message = service.message {
+                Text(message).font(.caption).foregroundStyle(.secondary).accessibilityLabel(message)
+            }
+        }
+        .onAppear { pageVisible = true; service.setEditorVisible(true) }
+        .onDisappear { pageVisible = false; service.setEditorVisible(false) }
+        .onReceive(SettingsWindowVisibility.shared.$isVisible) { if pageVisible { service.setEditorVisible($0) } }
+    }
+
+    private func title(_ section: MenuBarOrganizerSection) -> String {
+        switch section {
+        case .visible: return hiderText.diagramVisible
+        case .hidden: return hiderText.diagramHidden
+        case .alwaysHidden: return hiderText.diagramAlwaysHidden
+        }
+    }
+
+    private func caption(_ section: MenuBarOrganizerSection) -> String {
+        switch section {
+        case .visible: return labels.visible
+        case .hidden: return labels.hidden
+        case .alwaysHidden: return labels.alwaysHidden
+        }
+    }
+
+    private func category(_ section: MenuBarOrganizerSection) -> some View {
+        let items = MenuBarOrganizerSupport.orderedItems(service.items, in: section)
+        let matches = items.filter { MenuBarOrganizerPolicy.searchScore(query: query, name: $0.displayName) != nil }
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title(section)).font(.subheadline.weight(.semibold))
+                Spacer(minLength: 4)
+                Text(items.count, format: .number).font(.caption).foregroundStyle(.secondary)
+            }
+            Text(caption(section)).font(.caption).foregroundStyle(.secondary)
+                .frame(minHeight: 42, alignment: .topLeading)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 76), spacing: 6)], spacing: 6) {
+                ForEach(matches) { item in itemCell(item, section: section) }
+            }
+            Text(matches.isEmpty && !query.isEmpty ? text.empty : labels.drop)
+                .font(.caption).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, minHeight: matches.isEmpty ? 96 : 32)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 220, alignment: .topLeading)
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(0.1)))
+        .contentShape(Rectangle())
+        .dropDestination(for: String.self) { values, _ in drop(values, before: nil, section: section) }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(title(section))
+    }
+
+    @ViewBuilder private func itemCell(_ item: ManagedMenuBarItem, section: MenuBarOrganizerSection) -> some View {
+        let tile = VStack(spacing: 5) {
+            MenuBarItemThumbnail(item: item).frame(width: 24, height: 24)
+            Text(item.displayName).font(.caption2).lineLimit(2).multilineTextAlignment(.center)
+            if !item.isMovable { Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary) }
+        }
+        .frame(maxWidth: .infinity, minHeight: 76)
+        .padding(4)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.65), in: RoundedRectangle(cornerRadius: 7))
+        .help(item.isMovable ? item.displayName : "\(item.displayName) — \(labels.locked)")
+        .accessibilityElement(children: .combine)
+        .contextMenu {
+            ForEach(MenuBarOrganizerSection.allCases) { destination in
+                Button(title(destination)) { service.move(id: item.id, before: nil, to: destination) }
+                    .disabled(!canArrange || !item.isMovable || destination == section)
+            }
+        }
+        if canArrange && item.isMovable {
+            tile.draggable(encoded(item.id))
+                .dropDestination(for: String.self) { values, _ in drop(values, before: item.id, section: section) }
+        } else { tile }
+    }
+
+    private func encoded(_ id: MenuBarItemIdentity) -> String {
+        (try? JSONEncoder().encode(id)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+    }
+
+    private func drop(_ values: [String], before target: MenuBarItemIdentity?, section: MenuBarOrganizerSection) -> Bool {
+        guard canArrange, values.count == 1, let value = values.first?.data(using: .utf8),
+              let id = try? JSONDecoder().decode(MenuBarItemIdentity.self, from: value),
+              service.items.contains(where: { $0.id == id && $0.isMovable }) else { return false }
+        service.move(id: id, before: target, to: section)
+        return true
+    }
+}
+
+struct MenuBarOrganizerOptions: View {
+    @ObservedObject private var l10n = L10n.shared
+    @ObservedObject private var service = MenuBarOrganizerService.shared
+    @AppStorage(DefaultsKey.menuBarHiderEnabled) private var hiderEnabled = false
     @AppStorage(DefaultsKey.menuBarOrganizerSpacing) private var spacing = 16
     @AppStorage(DefaultsKey.menuBarOrganizerAppearance) private var appearance = false
     @AppStorage(DefaultsKey.menuBarOrganizerGradient) private var gradient = false
@@ -22,39 +152,9 @@ struct MenuBarOrganizerSettings: View {
     @AppStorage(DefaultsKey.menuBarOrganizerFirstColor) private var first = "#303038"
     @AppStorage(DefaultsKey.menuBarOrganizerSecondColor) private var second = "#606070"
     @AppStorage(DefaultsKey.menuBarOrganizerOpacity) private var opacity = 0.25
-    @State private var pageVisible = false
     private var text: MenuBarOrganizerStrings { FeatureStrings.menuBarOrganizer(l10n.language) }
-    private var hiderText: MenuBarHiderStrings { FeatureStrings.menuBarHider(l10n.language) }
 
     var body: some View {
-        SettingsCard(title: text.advanced) {
-            SettingsRow(symbol: "slider.horizontal.3", title: text.advanced, caption: text.advancedCaption) {
-                Toggle(text.enable, isOn: $advanced).labelsHidden()
-            }
-            if !MenuBarOrganizerPolicy.supportsAdvancedBackend {
-                Text(text.unsupported).font(.caption).foregroundStyle(.secondary)
-            } else if advanced {
-                PermissionRow(kind: .accessibility)
-                if !MenuBarOrganizerPolicy.conflictingManagers().isEmpty {
-                    Text(text.conflict).font(.caption).foregroundStyle(.orange)
-                }
-                HStack {
-                    Button(text.drawer) { service.showDrawer() }
-                    Button(text.search) { service.showDrawer(search: true) }
-                    Spacer()
-                    Button(text.refresh) { service.refresh() }
-                    Button(text.undo) { service.undoLastMove() }.disabled(!service.canUndo)
-                }
-                .disabled(!service.isRunning || service.isBusy)
-                Text(text.arrange).font(.headline)
-                ForEach(MenuBarOrganizerSection.allCases) { section in sectionEditor(section) }
-            }
-            if let message = service.message {
-                Text(message).font(.caption).foregroundStyle(.secondary)
-                    .accessibilityLabel(message)
-            }
-        }
-        .disabled(!hiderEnabled)
         SettingsCard(title: text.spacing) {
             Text(text.spacingCaption).font(.caption).foregroundStyle(.secondary)
             HStack {
@@ -93,7 +193,6 @@ struct MenuBarOrganizerSettings: View {
             }
         }
         .disabled(!hiderEnabled)
-        .onChange(of: advanced) { _, _ in service.syncWithPreferences() }
         .onChange(of: appearance) { _, _ in service.syncWithPreferences() }
         .onChange(of: gradient) { _, _ in service.syncWithPreferences() }
         .onChange(of: border) { _, _ in service.syncWithPreferences() }
@@ -103,66 +202,6 @@ struct MenuBarOrganizerSettings: View {
         .onChange(of: first) { _, _ in service.syncWithPreferences() }
         .onChange(of: second) { _, _ in service.syncWithPreferences() }
         .onChange(of: opacity) { _, _ in service.syncWithPreferences() }
-        .onAppear { pageVisible = true; service.setEditorVisible(true) }
-        .onDisappear { pageVisible = false; service.setEditorVisible(false) }
-        .onReceive(SettingsWindowVisibility.shared.$isVisible) { if pageVisible { service.setEditorVisible($0) } }
-    }
-
-    private func title(_ section: MenuBarOrganizerSection) -> String {
-        switch section {
-        case .visible: return hiderText.diagramVisible
-        case .hidden: return hiderText.diagramHidden
-        case .alwaysHidden: return hiderText.diagramAlwaysHidden
-        }
-    }
-
-    private func sectionEditor(_ section: MenuBarOrganizerSection) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title(section)).font(.subheadline.weight(.medium))
-            ScrollView(.horizontal) {
-                HStack(spacing: 8) {
-                    ForEach(MenuBarOrganizerSupport.orderedItems(service.items, in: section)) { item in
-                        VStack(spacing: 4) {
-                            MenuBarItemThumbnail(item: item).frame(width: 22, height: 22)
-                            Text(item.displayName).font(.caption2).lineLimit(2)
-                        }
-                        .frame(width: 88, height: 64)
-                        .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
-                        .opacity(item.isMovable ? 1 : 0.4)
-                        .draggable(encoded(item.id))
-                        .dropDestination(for: String.self) { values, _ in
-                            drop(values, before: item.id, section: section)
-                        }
-                        .help(item.displayName)
-                        .accessibilityLabel(item.displayName)
-                        .contextMenu {
-                            ForEach(MenuBarOrganizerSection.allCases) { destination in
-                                Button(title(destination)) { service.move(id: item.id, before: nil, to: destination) }
-                                    .disabled(!item.isMovable || destination == section)
-                            }
-                        }
-                    }
-                    Text(service.items.contains(where: { $0.section == section }) ? "+" : text.empty)
-                        .font(.caption).foregroundStyle(.secondary)
-                        .frame(minWidth: 88, minHeight: 64)
-                        .dropDestination(for: String.self) { values, _ in drop(values, before: nil, section: section) }
-                }
-                .padding(4)
-            }
-        }
-        .disabled(!service.isRunning || service.isBusy)
-    }
-
-    private func encoded(_ id: MenuBarItemIdentity) -> String {
-        (try? JSONEncoder().encode(id)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
-    }
-
-    private func drop(_ values: [String], before target: MenuBarItemIdentity?, section: MenuBarOrganizerSection) -> Bool {
-        guard values.count == 1, let value = values.first?.data(using: .utf8),
-              let id = try? JSONDecoder().decode(MenuBarItemIdentity.self, from: value),
-              service.items.contains(where: { $0.id == id && $0.isMovable }) else { return false }
-        service.move(id: id, before: target, to: section)
-        return true
     }
 
     private func colorBinding(_ storage: Binding<String>) -> Binding<Color> {

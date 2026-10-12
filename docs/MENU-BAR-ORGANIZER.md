@@ -1,51 +1,52 @@
 # Menu bar organizer
 
-The opt-in Menu Bar Hider has advanced controls on the same Settings page.
-Basic hiding uses the native dividers from PR #2741 and requires no permission.
+The opt-in Menu Bar Hider uses one hollow circle in both states. Click it to
+show or hide the Hidden group. Always Hidden stays concealed in both states;
+move an item to another group in Settings to make it available again.
 
-## Advanced controls
+## Arrange icons
 
-On macOS 14–26, enable Advanced controls and grant Accessibility to arrange
-items from Settings or open the icon drawer. Drag a tile before another tile,
-or onto the end of a section. A context menu offers the same section choices.
-Undo returns the last successfully moved item to its previous neighbor/section.
-The always-hidden section is usable only when its divider is enabled.
+Settings shows Visible, Hidden and Always Hidden together, with app icons and
+names for detected running apps' menu-bar items. It cannot discover status items
+for applications that are not running. Basic hiding needs no permission. On
+macOS 14–26, grant Accessibility in the editor to arrange items or use the drawer.
+There is no separate advanced-mode switch. Inventory remains read-only without
+Accessibility; system-hosted status items may also require that permission for
+geometry discovery. Unavailable inventory is reported explicitly. Drag before a tile or onto a group's end; the context menu offers
+the same group choices. Undo restores the last successful move. Protected or
+ambiguous items stay visible in the editor but cannot be moved.
 
-The drawer appears below the menu bar and scrolls independently of available
-menu bar width. Search supports case/diacritic-insensitive fuzzy matches, arrow
-navigation, Return and Escape. Always-hidden items are included only when
-explicitly selected. Previews use app icons, not screen captures; Screen
-Recording is not required. Some system items therefore use a generic icon.
+The drawer scrolls independently of menu-bar width. Search supports fuzzy
+matches, arrow navigation, Return and Escape. Always Hidden items are excluded
+from both drawer and search, and the activation service rejects them. Previews
+use app icons, not screen captures; Screen Recording is not required.
 
-Activating a hidden item temporarily moves its real status item into the visible
-section, opens its native menu, then restores its original position after the
-menu closes, including the prior collapsed, normally expanded, or show-all
-state. On a crowded notched bar, activation selects a reachable insertion slot
-farther right instead of inserting next to the notch. The target and the whole
-item width are checked again before dragging. Normally expanded restores
-concealment of always-hidden items even when auto-collapse is off. Unknown,
-duplicate, protected, stale or unresolved item identities
-are refused. Failures before any possible movement restore the previous display
-state and its timer. Once a drag may have displaced an item, failed or cancelled
-operations explicitly hold the bar revealed for manual recovery; a deliberate
-toggle or configuration session releases that hold. They are reported rather
-than treated as completed. Disable, uninstall and quit
-cancel operations and release pending mouse input and cursor suppression.
-Explicit organizer teardown also closes decoration panels. Decoration remains
-available with advanced mode off and without Accessibility.
+Opening Settings, repeated clicks, Option-click and recovery never reveal
+Always Hidden. The two underlying native spacers remain blank; no separator
+symbols or style picker are exposed. Legacy icon-style preferences render the
+same circle. The Always Hidden spacer is maintained even for older preferences
+that had disabled it.
 
-Stable window identities and app icons are reused during inventory polling.
-Each new operation revalidates identities, and application, permission, display
-and wake changes invalidate the inventory. Invalidated or cancelled scans cannot
-publish stale results. Reordering subscribes to mouse motion only while Command
-is held. Both double-click and Hide Always-Hidden Icons return to the normally
-expanded state when all icons are showing.
+Activating a Hidden item temporarily moves its real status item into Visible,
+opens its native menu, then restores its original position and the prior normal
+expanded/collapsed state. Crowded notched bars use a reachable insertion slot.
+Unknown, duplicate, protected, stale or unresolved identities are refused.
+Failures before movement restore the previous state and timer. If a drag may
+have displaced an item, recovery keeps normal Hidden items expanded; Always
+Hidden remains concealed. Disable, uninstall, quit and permission loss cancel
+input and release pending mouse input and cursor suppression. Decoration is
+independent of Accessibility.
 
-The advanced backend is adapted from the earlier #360 proposal. It uses optional
-WindowServer queries and synthesized Command-drags, gated before initialization
-on macOS 27 and later. Missing private geometry queries disable automatic
-operations. The underlying #2741 hider remains usable on newer systems. Stop
-other menu bar managers before using advanced controls.
+Window identities and app icons are reused during inventory polling. Operations
+revalidate identities; app, permission, display and wake changes invalidate the
+inventory. Stale scans cannot publish results. Motion monitoring is active only
+while Command is held.
+
+The organizer backend is adapted from #360. It uses optional WindowServer
+queries and synthesized Command-drags, gated before initialization on macOS 27
+and later. Missing private geometry queries disable automatic operations. Basic
+hiding remains available on newer systems. Stop other menu-bar managers before
+arranging items.
 
 ## Spacing
 
@@ -84,7 +85,7 @@ spacing transactions and rollback, settings backup, contextual permission demand
 and all fifteen locales. These are
 isolated tests; they do not synthesize input or modify the host's global spacing.
 
-Before leaving draft, verify the following physically on supported macOS versions:
+Before release, verify the following physically on supported macOS versions:
 
 - Drag between all three sections, reorder within each, and undo including a
   protected neighbor and an empty section.
@@ -101,8 +102,7 @@ Before leaving draft, verify the following physically on supported macOS version
 - Check macOS 27 basic hiding and that advanced controls stay gated without
   touching the older private backend.
 
-The settings image, if supplied, is a native rendering with sample inventory.
-It demonstrates layout only, not successful desktop interaction.
+A settings preview demonstrates layout only, not successful desktop interaction.
 
 ## Attribution
 

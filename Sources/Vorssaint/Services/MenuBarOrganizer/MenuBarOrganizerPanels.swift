@@ -66,15 +66,13 @@ private struct MenuBarDrawerView: View {
     let searchMode: Bool
     let close: () -> Void
     @State private var query = ""
-    @State private var includeAlways = false
     @State private var selected: MenuBarItemIdentity?
     @FocusState private var searchFocused: Bool
     private var text: MenuBarOrganizerStrings { FeatureStrings.menuBarOrganizer(l10n.language) }
 
     private var matches: [ManagedMenuBarItem] {
         service.items.filter {
-            !$0.isProtected && $0.identityState == .stable
-                && (includeAlways || $0.section != .alwaysHidden)
+            MenuBarOrganizerPolicy.canActivate($0)
                 && (searchMode || !query.isEmpty || $0.section != .visible)
         }.compactMap { item -> (ManagedMenuBarItem, Int)? in
             MenuBarOrganizerPolicy.searchScore(query: query, name: item.displayName).map { (item, $0) }
@@ -95,7 +93,6 @@ private struct MenuBarDrawerView: View {
                 .textFieldStyle(.roundedBorder)
                 .focused($searchFocused)
                 .onSubmit { if let item = matches.first(where: { $0.id == selected }) ?? matches.first { activate(item) } }
-            Toggle(text.includeAlways, isOn: $includeAlways).font(.caption)
             ScrollView {
                 if matches.isEmpty {
                     Text(text.empty).foregroundStyle(.secondary).padding(20)

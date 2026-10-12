@@ -10,6 +10,7 @@ import Combine
 final class MenuBarOrganizerService: ObservableObject {
     static let shared = MenuBarOrganizerService()
     @Published private(set) var items: [ManagedMenuBarItem] = []
+    @Published private(set) var inventoryUnavailable = false
     @Published private(set) var isBusy = false
     @Published private(set) var message: String?
     @Published private(set) var canUndo = false
@@ -36,9 +37,6 @@ final class MenuBarOrganizerService: ObservableObject {
     private var enabled: Bool {
         AppFeature.menuBarHider.isAvailable && UserDefaults.standard.bool(forKey: DefaultsKey.menuBarHiderEnabled)
     }
-    private var advancedRequested: Bool {
-        enabled && UserDefaults.standard.bool(forKey: DefaultsKey.menuBarOrganizerAdvanced)
-    }
 
     private init() {
         Permissions.shared.$accessibility.removeDuplicates().sink { [weak self] _ in
@@ -62,8 +60,11 @@ final class MenuBarOrganizerService: ObservableObject {
         let hasConflict = !MenuBarOrganizerPolicy.conflictingManagers().isEmpty
         // Decoration is independent of the Accessibility-backed organizer.
         appearance.sync(enabled: enabled && !hasConflict)
-        guard advancedRequested, MenuBarOrganizerPolicy.supportsAdvancedBackend,
-              AXIsProcessTrusted(), !hasConflict else {
+        if !AXIsProcessTrusted(), isBusy || panel?.isVisible == true {
+            // Read-only inventory can continue, but pending input must stop now.
+            stopOperations()
+        }
+        guard enabled, MenuBarOrganizerPolicy.supportsAdvancedBackend, !hasConflict else {
             stopOperations()
             return
         }
@@ -143,7 +144,7 @@ final class MenuBarOrganizerService: ObservableObject {
         let timer = Timer(timeInterval: 3, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                guard AXIsProcessTrusted(), self.advancedRequested else { self.syncWithPreferences(); return }
+                guard self.enabled else { self.syncWithPreferences(); return }
                 self.refresh()
             }
         }
@@ -154,7 +155,7 @@ final class MenuBarOrganizerService: ObservableObject {
 
     private func checkAccess() throws {
         try Task.checkCancellation()
-        guard advancedRequested, isRunning, MenuBarOrganizerPolicy.supportsAdvancedBackend else {
+        guard enabled, isRunning, MenuBarOrganizerPolicy.supportsAdvancedBackend else {
             throw MenuBarItemMoveError.itemUnavailable
         }
         guard AXIsProcessTrusted() else { throw MenuBarItemMoveError.permissionMissing }
@@ -163,7 +164,14 @@ final class MenuBarOrganizerService: ObservableObject {
 
     @discardableResult
     private func snapshot(expected: UInt64) async -> MenuBarItemSnapshot? {
-        guard (try? checkAccess()) != nil, let geometry = hider.organizerGeometry() else { return nil }
+        guard !Task.isCancelled, isRunning, enabled else { return nil }
+        guard let geometry = await hider.organizerGeometry() else {
+            if generation == expected, !Task.isCancelled {
+                items = []
+                inventoryUnavailable = true
+            }
+            return nil
+        }
         let refreshIdentities = needsIdentityRefresh
         let revision = inventoryRevision
         needsIdentityRefresh = false
@@ -172,7 +180,8 @@ final class MenuBarOrganizerService: ObservableObject {
                                               excludedWindowIDs: geometry.excluded,
                                               refreshIdentities: refreshIdentities)
         guard !Task.isCancelled, generation == expected, inventoryRevision == revision,
-              isRunning, AXIsProcessTrusted() else { return nil }
+              isRunning else { return nil }
+        inventoryUnavailable = !snapshot.enumerationSucceeded
         // Failed scans are never used as candidates for input synthesis.
         items = snapshot.enumerationSucceeded ? snapshot.items.filter { MenuBarOrganizerPolicy.validFrame($0.frame) } : []
         return snapshot.enumerationSucceeded ? snapshot : nil
@@ -216,7 +225,7 @@ final class MenuBarOrganizerService: ObservableObject {
         guard id != target else { return }
         run { [weak self] expected in
             guard let self else { return }
-            hider.showAll(startTimer: false)
+            hider.prepareForOrganizerOperation()
             try await Task.sleep(for: .milliseconds(180))
             guard await snapshot(expected: expected) != nil else { throw MenuBarItemMoveError.itemUnavailable }
             let original = try uniqueItem(id)
@@ -234,7 +243,7 @@ final class MenuBarOrganizerService: ObservableObject {
         guard let undo else { return }
         run { [weak self] expected in
             guard let self else { return }
-            hider.showAll(startTimer: false)
+            hider.prepareForOrganizerOperation()
             try await Task.sleep(for: .milliseconds(180))
             try await relocate(id: undo.id, before: undo.neighbor, to: undo.section, expected: expected)
             self.undo = nil
@@ -249,7 +258,7 @@ final class MenuBarOrganizerService: ObservableObject {
         for attempt in 0..<2 {
             try checkAccess()
             guard await snapshot(expected: expected) != nil,
-                  let geometry = hider.organizerGeometry() else { throw MenuBarItemMoveError.itemUnavailable }
+                  let geometry = await hider.organizerGeometry() else { throw MenuBarItemMoveError.itemUnavailable }
             let item = try uniqueItem(id)
             guard item.isMovable else { throw MenuBarItemMoveError.itemNotMovable }
             let targetItem = try target.map { try uniqueItem($0, allowProtected: true) }
@@ -293,10 +302,11 @@ final class MenuBarOrganizerService: ObservableObject {
             let previousDisplayState = hider.organizerDisplayState
             activationRecovery = (previousDisplayState, false)
             defer { if generation == expected { finishActivationRecovery() } }
-            hider.showAll(startTimer: false)
+            hider.prepareForOrganizerOperation()
             try await Task.sleep(for: .milliseconds(180))
             guard await snapshot(expected: expected) != nil else { throw MenuBarItemMoveError.itemUnavailable }
             let original = try uniqueItem(id)
+            guard MenuBarOrganizerPolicy.canActivate(original) else { throw MenuBarItemMoveError.itemUnavailable }
             let ordered = MenuBarOrganizerSupport.orderedItems(items, in: original.section)
             let index = ordered.firstIndex { $0.windowID == original.windowID }!
             let neighbor = index + 1 < ordered.count ? ordered[index + 1].id : nil
@@ -304,7 +314,7 @@ final class MenuBarOrganizerService: ObservableObject {
             if moved {
                 // The first visible item can abut the notch on a crowded bar.
                 // Choose a reachable slot farther right before sending input.
-                guard let geometry = hider.organizerGeometry(),
+                guard let geometry = await hider.organizerGeometry(),
                       let strip = visibleStrip(containing: geometry.hidden),
                       let target = MenuBarOrganizerPolicy.activationTarget(for: original, in: items, strip: strip)
                 else { throw MenuBarItemMoveError.itemUnavailable }

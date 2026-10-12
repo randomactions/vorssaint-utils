@@ -138,6 +138,9 @@ enum MenuBarOrganizerTests {
         }
         defaults.removeObject(forKey: MenuBarGlobalSpacing.restoreKey)
         let original = item(id: "hidden", window: 10, x: 700)
+        suite.expect(!MenuBarOrganizerPolicy.canActivate(item(id: "permanent", window: 99, x: 0, section: .alwaysHidden)),
+                     "Always Hidden cannot be activated through the drawer or search")
+        suite.expect(MenuBarOrganizerPolicy.canActivate(original), "Hidden items remain available for activation")
         let crowded = item(id: "edge", window: 11, x: 1010, section: .visible)
         let reachable = item(id: "right", window: 12, x: 1500, protected: true, section: .visible)
         let strip = CGRect(x: 1010, y: 0, width: 790, height: 24)
@@ -170,8 +173,8 @@ enum MenuBarOrganizerTests {
                                       boolFor: { $0 == DefaultsKey.menuBarHiderEnabled || (advanced && $0 == DefaultsKey.menuBarOrganizerAdvanced) },
                                       stringFor: { _ in nil }, dataFor: { _ in nil })
         }
-        suite.expect(users(false).isEmpty && users(true) == [.menuBarHider],
-                     "permission polling is active only for opted-in advanced controls")
+        suite.expect(users(false) == [.menuBarHider] && users(true) == [.menuBarHider],
+                     "permission status follows the enabled organizer, independent of the old advanced switch")
         for language in AppLanguage.allCases {
             let strings = FeatureStrings.menuBarOrganizer(language)
             for field in Mirror(reflecting: strings).children {

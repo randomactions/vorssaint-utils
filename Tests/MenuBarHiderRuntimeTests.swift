@@ -48,7 +48,6 @@ enum MenuBarHiderRuntimeTests {
         let hotkey = Hotkey()
         var isEnabled = false
         var isCollapsed = false
-        var isShowingAll = false
         var isConfiguring = false
         var isReorderingItems = false
         var shortcutRegistrationFailed = false
@@ -68,9 +67,6 @@ enum MenuBarHiderRuntimeTests {
         func removeSeparatorDragMonitor() {}
         func visibleStatusItemX(_ item: Item) -> CGFloat? { item.visibleX }
         var lastToggleClickTimestamp: TimeInterval = 0
-        var didRevealInClickSequence = false
-        var pendingClickTimer: Timer?
-        var pendingClickGeneration: UInt64 = 0
         var didExpandFromHover = false
         var toggleItem: Item?
         var separatorItem: Item? { separatorRolesSwapped ? physicalAlwaysHiddenItem : physicalSeparatorItem }
@@ -144,7 +140,7 @@ enum MenuBarHiderRuntimeTests {
         host.toggle()
         host.expand()
         host.collapse()
-        host.showAll()
+        host.prepareForOrganizerOperation()
         host.beginConfigurationMode()
         host.resetSeparatorPositions()
         host.revealForStatusItemRecovery()
@@ -205,40 +201,27 @@ enum MenuBarHiderRuntimeTests {
 
         host.revealForStatusItemRecovery()
         host.syncWithPreferences()
-        suite.expect(!host.isCollapsed && host.isShowingAll && host.autoCollapseTimer == nil && host.recoveryHoldsExpansion,
-                     "icon recovery reveals even always-hidden controls across preference syncs")
+        suite.expect(!host.isCollapsed && host.autoCollapseTimer == nil && host.recoveryHoldsExpansion,
+                     "recovery holds only Hidden icons expanded across preference syncs")
         let clicks = Host(defaults: defaults)
         clicks.isEnabled = true
         clicks.isCollapsed = true
-        clicks.handleToggleClick(clickCount: 1, timestamp: 10, alwaysHiddenEnabled: true)
-        suite.expect(clicks.isCollapsed, "first click keeps the native layout stable for the second click")
-        clicks.handleToggleClick(clickCount: 1, timestamp: 10.4, alwaysHiddenEnabled: true)
-        suite.expect(clicks.isShowingAll,
-                     "a system-classified double click slower than 300 ms reveals always-hidden icons")
-        clicks.handleToggleClick(clickCount: 3, timestamp: 10.45, alwaysHiddenEnabled: true)
-        suite.expect(clicks.isShowingAll, "the tail of a reveal gesture cannot hide the recovered controls")
-        clicks.handleToggleClick(clickCount: 1, timestamp: 11, alwaysHiddenEnabled: true)
-        clicks.handleToggleClick(clickCount: 2, timestamp: 11.1, alwaysHiddenEnabled: true)
-        suite.expect(!clicks.isShowingAll && !clicks.isCollapsed,
-                     "a second double-click hides only always-hidden items, preserving the expanded section")
-        clicks.handleToggleClick(clickCount: 3, timestamp: 11.2, alwaysHiddenEnabled: true)
-        suite.expect(!clicks.isShowingAll && !clicks.isCollapsed,
-                     "a gesture tail cannot immediately reveal the section again")
-        clicks.toggleAlwaysHiddenSection()
-        clicks.handleToggleClick(clickCount: 1, timestamp: 12, alwaysHiddenEnabled: true)
-        clicks.finishPendingClick(generation: clicks.pendingClickGeneration)
-        suite.expect(clicks.isCollapsed, "a new single click still closes the revealed groups")
-        clicks.handleToggleClick(clickCount: 1, timestamp: 14, alwaysHiddenEnabled: true)
-        let staleClick = clicks.pendingClickGeneration
-        clicks.revealForStatusItemRecovery()
-        clicks.finishPendingClick(generation: staleClick)
-        suite.expect(clicks.isShowingAll && clicks.pendingClickTimer == nil,
-                     "recovery cancels a queued single click without re-hiding controls")
-        clicks.collapse()
-        clicks.handleToggleClick(clickCount: 1, timestamp: 16, alwaysHiddenEnabled: true)
-        clicks.handleToggleClick(clickCount: 2, timestamp: 16.1, alwaysHiddenEnabled: true)
-        suite.expect(clicks.isShowingAll && clicks.pendingClickTimer == nil,
-                     "AppKit-classified double clicks also resolve without a delayed collapse")
+        clicks.handleToggleClick(clickCount: 1, timestamp: 10)
+        suite.expect(!clicks.isCollapsed, "the circle responds to a single click immediately")
+        clicks.handleToggleClick(clickCount: 2, timestamp: 10.1)
+        clicks.handleToggleClick(clickCount: 3, timestamp: 10.2)
+        suite.expect(!clicks.isCollapsed, "double- and triple-click tails cannot trigger another action")
+        clicks.handleToggleClick(clickCount: 1, timestamp: 11)
+        suite.expect(clicks.isCollapsed, "a later click conceals the normal hidden group")
+        clicks.handleToggleClick(clickCount: 1, timestamp: 11.1)
+        suite.expect(clicks.isCollapsed, "forwarded double-click tails with clickCount one are ignored")
+        clicks.beginConfigurationMode()
+        suite.expect(clicks.isCollapsed, "opening Settings preserves the collapsed display mode")
+        clicks.endConfigurationMode()
+        clicks.expand()
+        clicks.beginConfigurationMode()
+        suite.expect(!clicks.isCollapsed, "opening Settings preserves the expanded display mode")
+        clicks.endConfigurationMode()
         let moves = NSEvent.moveRegistrations
         clicks.syncSeparatorMouseMoveMonitor(commandHeld: false)
         suite.expect(NSEvent.moveRegistrations == moves, "idle hider does not subscribe to mouse motion")
@@ -255,37 +238,13 @@ enum MenuBarHiderRuntimeTests {
         clicks.syncSeparatorMouseMoveMonitor(commandHeld: true)
         suite.expect(NSEvent.moveRegistrations == moves + 2, "disabled hider cannot arm motion monitoring")
         clicks.isEnabled = true
-        clicks.collapse()
-        clicks.handleToggleClick(clickCount: 1, timestamp: 18, alwaysHiddenEnabled: true)
-        RunLoop.main.run(until: Date().addingTimeInterval(0.6))
-        suite.expect(!clicks.isCollapsed && !clicks.isShowingAll && clicks.pendingClickTimer == nil,
-                     "a real one-shot timer performs the single click after the gesture interval")
-        clicks.revealForStatusItemRecovery()
         clicks.installOrUpdateItems()
         let leftSlot = clicks.physicalSeparatorItem!
         let rightSlot = clicks.physicalAlwaysHiddenItem!
-        leftSlot.visibleX = 100
-        rightSlot.visibleX = 120
-        clicks.repairSeparatorOrder()
-        suite.expect(clicks.separatorItem === rightSlot && clicks.alwaysHiddenItem === leftSlot,
-                     "crossed separators exchange roles without exchanging physical identities")
-        clicks.repairSeparatorOrder()
-        suite.expect(clicks.separatorRolesSwapped,
-                     "repeated order repair cannot oscillate between separator roles")
-        rightSlot.visibleX = nil
-        clicks.repairSeparatorOrder()
-        suite.expect(clicks.separatorRolesSwapped,
-                     "missing on-screen geometry cannot reverse the repaired roles")
-        leftSlot.visibleX = 140
-        rightSlot.visibleX = 120
-        clicks.repairSeparatorOrder()
-        suite.expect(!clicks.separatorRolesSwapped && clicks.separatorItem === leftSlot,
-                     "dragging the separators back exchanges their roles again")
         let normalPositionKey = "NSStatusItem Preferred Position \(MenuBarHiderSupport.separatorAutosaveName)"
         let permanentPositionKey = "NSStatusItem Preferred Position \(MenuBarHiderSupport.alwaysHiddenAutosaveName)"
         defaults.set(651.0, forKey: normalPositionKey)
         defaults.set(357.0, forKey: permanentPositionKey)
-        clicks.isShowingAll = false
         leftSlot.visibleX = nil
         rightSlot.visibleX = nil
         clicks.repairSeparatorOrder()
@@ -303,17 +262,17 @@ enum MenuBarHiderRuntimeTests {
         defaults.removeObject(forKey: permanentPositionKey)
         clicks.autoCollapseTimer?.invalidate()
         host.autoCollapseIfCurrent(generation: nextGeneration)
-        suite.expect(host.isShowingAll && host.recoveryHoldsExpansion,
+        suite.expect(!host.isCollapsed && host.recoveryHoldsExpansion,
                      "a stale callback cannot hide the only recovery control again")
         host.isConfiguring = true
         host.endConfigurationMode()
-        suite.expect(host.isShowingAll && host.autoCollapseTimer == nil,
-                     "closing Settings after explicit recovery leaves every section revealed")
+        suite.expect(!host.isCollapsed && host.autoCollapseTimer == nil,
+                     "closing Settings after explicit recovery leaves only normal hidden items revealed")
         for _ in 0..<10 {
             host.revealForStatusItemRecovery()
             host.syncWithPreferences()
         }
-        suite.expect(host.isShowingAll && host.autoCollapseTimer == nil,
+        suite.expect(!host.isCollapsed && host.autoCollapseTimer == nil,
                      "repeated recovery never starts a reveal-collapse timer loop")
         host.beginConfigurationMode()
         host.endConfigurationMode()
@@ -331,8 +290,8 @@ enum MenuBarHiderRuntimeTests {
         host.collapse()
         let savedCollapsed = defaults.bool(forKey: DefaultsKey.menuBarHiderCollapsed)
         host.setReorderingItems(true)
-        suite.expect(host.isReorderingItems && host.isCollapsed && !host.isShowingAll,
-                     "Command reordering temporarily reveals without changing collapse state")
+        suite.expect(host.isReorderingItems && host.isCollapsed,
+                     "Command reordering preserves the saved collapse state")
         suite.expect(host.autoCollapseTimer == nil && !host.hoverWatchdogActive,
                      "reordering stops collapse timers so the drop targets stay stable")
         host.syncWithPreferences()
@@ -354,7 +313,7 @@ enum MenuBarHiderRuntimeTests {
                      "an expanded bar resumes automatic and hover collapse after reordering")
 
         host.beginOrganizerOperation()
-        host.showAll(startTimer: false)
+        host.prepareForOrganizerOperation()
         let menuGeneration = host.autoCollapseGeneration
         host.syncWithPreferences()
         host.autoCollapseIfCurrent(generation: menuGeneration)
@@ -364,7 +323,7 @@ enum MenuBarHiderRuntimeTests {
         let heldInstalls = host.installs
         host.resetSeparatorPositions()
         suite.expect(host.installs == heldInstalls, "resetting separators cannot remove a native activation anchor mid-operation")
-        suite.expect(host.organizerHoldsExpansion && !host.isCollapsed && host.isShowingAll
+        suite.expect(host.organizerHoldsExpansion && !host.isCollapsed
                      && host.autoCollapseTimer == nil,
                      "preference sync, manual collapse and stale timers cannot hide a native menu during activation")
         host.endOrganizerOperation(resume: true)
@@ -373,31 +332,30 @@ enum MenuBarHiderRuntimeTests {
 
         defaults.set(false, forKey: DefaultsKey.menuBarHiderAutoCollapse)
         defaults.set(true, forKey: DefaultsKey.menuBarHiderAlwaysHiddenEnabled)
-        for state in [MenuBarHiderSupport.DisplayState.collapsed, .expanded, .showAll] {
+        for state in [MenuBarHiderSupport.DisplayState.collapsed, .expanded] {
             switch state {
             case .collapsed: host.collapse()
             case .expanded: host.expand()
-            case .showAll: host.showAll()
             }
             let previous = host.organizerDisplayState
             host.beginOrganizerOperation()
-            host.showAll(startTimer: false)
+            host.prepareForOrganizerOperation()
             host.restoreAfterOrganizerActivation(previous)
             suite.expect(host.organizerDisplayState == state && !host.organizerHoldsExpansion
                             && host.autoCollapseTimer == nil,
-                         "activation restores all three display modes even with auto-collapse off")
+                         "activation restores both display modes even with auto-collapse off")
         }
         host.collapse()
         let beforeConfiguration = host.organizerDisplayState
         host.beginOrganizerOperation()
-        host.showAll(startTimer: false)
+        host.prepareForOrganizerOperation()
         host.beginConfigurationMode()
         host.restoreAfterOrganizerActivation(beforeConfiguration)
-        suite.expect(host.isConfiguring && host.isShowingAll && !host.organizerHoldsExpansion,
+        suite.expect(host.isConfiguring && !host.organizerHoldsExpansion,
                      "activation does not collapse the bar when configuration started during the operation")
         host.endConfigurationMode()
         host.beginOrganizerOperation()
-        host.showAll(startTimer: false)
+        host.prepareForOrganizerOperation()
         defaults.set(false, forKey: DefaultsKey.menuBarHiderEnabled)
         host.syncWithPreferences()
         let disabledAppearances = host.appearances

@@ -4,8 +4,9 @@
 import CoreGraphics
 import Foundation
 
-/// Visual style options for the Menu Bar Hider toggle icon.
+/// Legacy saved styles remain decodable; every style now uses the same circle.
 enum MenuBarHiderIconStyle: String, CaseIterable, Identifiable {
+    case circle
     case chevron
     case dots
     case eye
@@ -13,18 +14,7 @@ enum MenuBarHiderIconStyle: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    func symbolName(isCollapsed: Bool) -> String {
-        switch self {
-        case .chevron:
-            return isCollapsed ? "chevron.left" : "chevron.right"
-        case .dots:
-            return isCollapsed ? "ellipsis.circle" : "ellipsis.circle.fill"
-        case .eye:
-            return isCollapsed ? "eye.slash" : "eye"
-        case .slash:
-            return isCollapsed ? "line.diagonal" : "line.diagonal.arrow"
-        }
-    }
+    func symbolName(isCollapsed: Bool) -> String { "circle" }
 }
 
 /// Pure calculations and constants for the Menu Bar Hider feature.
@@ -80,8 +70,8 @@ enum MenuBarHiderSupport {
     }
 
     static let defaultToggleWidth: Double = 24.0
-    static let normalSeparatorWidth: Double = 10.0
-    static let normalAlwaysHiddenWidth: Double = 12.0
+    static let normalSeparatorWidth: Double = 1.0
+    static let normalAlwaysHiddenWidth: Double = 1.0
 
     static let defaultAutoCollapseDelay = 5
     static let allowedAutoCollapseDelays = [3, 5, 10, 15, 30]
@@ -89,7 +79,6 @@ enum MenuBarHiderSupport {
     enum DisplayState: Equatable {
         case collapsed
         case expanded
-        case showAll
     }
 
     /// Sanitizes the auto-collapse delay in seconds against allowed options.
@@ -125,20 +114,15 @@ enum MenuBarHiderSupport {
         switch state {
         case .collapsed:
             return expansionLength(for: usableWidth)
-        case .expanded, .showAll:
+        case .expanded:
             return normalSeparatorWidth
         }
     }
 
     /// Computes the length of the always-hidden separator item given current state.
     static func alwaysHiddenLength(state: DisplayState, usableWidth: Double?, isEnabled: Bool) -> Double {
-        guard isEnabled else { return 0.0 }
-        switch state {
-        case .collapsed, .expanded:
-            return expansionLength(for: usableWidth)
-        case .showAll:
-            return normalAlwaysHiddenWidth
-        }
+        // Always Hidden has no reveal state, including editing and recovery.
+        expansionLength(for: usableWidth)
     }
 
     /// Grace period between the cursor leaving the toggle and the bar closing
@@ -151,24 +135,15 @@ enum MenuBarHiderSupport {
     }
 
     /// SF Symbol icon name for the toggle button based on state and style.
-    static func toggleSymbolName(isCollapsed: Bool, style: MenuBarHiderIconStyle = .chevron) -> String {
+    static func toggleSymbolName(isCollapsed: Bool, style: MenuBarHiderIconStyle = .circle) -> String {
         style.symbolName(isCollapsed: isCollapsed)
     }
 
     /// Tooltip for the toggle button based on collapse state and always-hidden status.
     /// Takes the strings so the choice stays a pure function the tests can drive
     /// for every language, instead of baking English into the service.
-    static func toggleTooltip(isCollapsed: Bool,
-                              isShowingAll: Bool,
-                              alwaysHiddenEnabled: Bool,
-                              strings: MenuBarHiderStrings) -> String {
-        if isCollapsed {
-            return strings.tooltipExpand
-        }
-        if alwaysHiddenEnabled {
-            return isShowingAll ? strings.tooltipCollapseHideAlways : strings.tooltipCollapseShowAll
-        }
-        return strings.tooltipCollapse
+    static func toggleTooltip(isCollapsed: Bool, strings: MenuBarHiderStrings) -> String {
+        isCollapsed ? strings.tooltipExpand : strings.tooltipCollapse
     }
 
     static func pointerIsOnMenuBar(_ point: CGPoint, screenFrames: [CGRect], barHeight: CGFloat) -> Bool {

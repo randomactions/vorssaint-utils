@@ -543,7 +543,7 @@ extension AppFeature {
                     || RadialMenuMouseTrigger.sanitized(
                         stringFor(DefaultsKey.radialMenuMouseButton)) != .off
             case (.menuBarHider, .accessibility):
-                return boolFor(DefaultsKey.menuBarOrganizerAdvanced)
+                return true // Arrangement is available directly in the enabled hider’s settings.
             case (.keepAwake, .accessibility):
                 return boolFor(DefaultsKey.keepAwakeMouseJiggleEnabled)
             case (.mixer, .accessibility):

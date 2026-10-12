@@ -47,6 +47,10 @@ enum MenuBarOrganizerPolicy {
         return item
     }
 
+    static func canActivate(_ item: ManagedMenuBarItem) -> Bool {
+        item.section != .alwaysHidden && !item.isProtected && item.identityState == .stable
+    }
+
     static func verifiedMove(windowID: CGWindowID, before targetID: CGWindowID?,
                              section: MenuBarOrganizerSection, items: [ManagedMenuBarItem]) -> Bool {
         let matches = items.filter { $0.windowID == windowID }

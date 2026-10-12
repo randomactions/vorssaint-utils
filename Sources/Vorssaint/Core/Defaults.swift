@@ -1598,7 +1598,7 @@ enum Defaults {
         DefaultsKey.menuBarHiderExpandOnHover: false,
         DefaultsKey.menuBarHiderScrollToToggle: true,
         DefaultsKey.menuBarHiderHapticFeedback: true,
-        DefaultsKey.menuBarHiderIconStyle: MenuBarHiderIconStyle.chevron.rawValue,
+        DefaultsKey.menuBarHiderIconStyle: MenuBarHiderIconStyle.circle.rawValue,
         DefaultsKey.menuBarHiderShortcutEnabled: false,
         DefaultsKey.menuBarHiderShortcut: GlobalShortcut.menuBarHiderDefault.storageValue,
         DefaultsKey.panelControlWindowMaximize: true,

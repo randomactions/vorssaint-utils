@@ -255,6 +255,7 @@ if (( TEST )); then
         Sources/Vorssaint/Core/QuitProtectionStrings.swift
         Sources/Vorssaint/Core/Defaults.swift
         Sources/Vorssaint/Core/MenuBarHiderStrings.swift
+        Sources/Vorssaint/Core/MenuBarEditorStrings.swift
         Sources/Vorssaint/Core/MenuBarOrganizerStrings.swift
         Sources/Vorssaint/Services/MenuBarOrganizer/MenuBarOrganizerSupport.swift
         Sources/Vorssaint/Services/MenuBarOrganizer/MenuBarOrganizerPolicy.swift
