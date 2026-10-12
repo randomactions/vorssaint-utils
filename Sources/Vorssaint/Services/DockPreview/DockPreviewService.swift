@@ -747,7 +747,6 @@ final class DockPreviewService: ObservableObject {
         let preferences = centeredPlacement ? DockPreviewPreferences(orientation: .bottom, autohide: false,
             tileSize: original.tileSize, magnification: false, magnifiedTileSize: original.magnifiedTileSize) : original
         beginSession(DockHit(app: app, iconFrame: anchor, preferences: preferences), external: external)
-        externalSession = external
     }
 
 
@@ -768,7 +767,7 @@ final class DockPreviewService: ObservableObject {
         // An app with no real windows shows nothing; if a panel is already up
         // (the user moved here from another app), close it cleanly.
         guard !list.isEmpty else {
-            if isVisible { endSession() }
+            endSession()
             return
         }
 
@@ -809,6 +808,7 @@ final class DockPreviewService: ObservableObject {
             }
         }
         showPanel(for: hit, itemCount: list.count)
+        externalSession = external && isVisible
     }
 
     /// Fully ends the session and tears down the panel.
@@ -929,8 +929,7 @@ final class DockPreviewService: ObservableObject {
 
     private func finishClosing(_ item: SwitcherItem, windowID: CGWindowID, attempt: Int) {
         guard isVisible,
-              currentSessionPID == item.pid,
-              windows.contains(where: { $0.windowID == windowID })
+              windows.contains(where: { $0.pid == item.pid && $0.windowID == windowID })
         else { return }
 
         let refreshed = WindowEnumerator.listWindows(for: item.pid, maximumCount: 12)

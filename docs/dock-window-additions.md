@@ -66,7 +66,8 @@ session ordering, compact bulk action, placement and lifecycle methods against
 inert doubles. It covers duplicate app names and launcher paths, moving or hidden
 Dock tiles, overlays, delayed clicks, permission revocation, filtered foreground
 windows, parallel/perpendicular gestures, mixed minimized lists, compact session
-handover, repeated stop/re-enable and all-disabled widgets. No target app is quit
+handover, empty external requests, grouped-window close confirmation, lock-screen
+music ownership across unlock, repeated stop/re-enable and all-disabled widgets. No target app is quit
 or captured by these checks. These simulations complement the native cases below.
 
 ## Manual validation before release
@@ -77,12 +78,14 @@ Use the developer app with its own preferences and permissions; keep the install
 - Exercise display locking with adjacent, offset and stacked monitors; disconnected targets, fully covered edges, bypass, real pointer cancellation, and sleep/wake.
 - Deny Screen Recording and confirm title-list switching, closing and minimizing still work. Enable it and confirm live frames stop on close, disable, uninstall and session changes; test frontmost preview exclusions.
 - Test native Command-Tab above normal/fullscreen desktops without shortcut takeover, and choose windows by mouse. Test three/four-finger open/cycle/lift, diagonal rejection, early lift during enumeration, and existing system-gesture conflicts.
+- Select an app with no previewable windows in native Command-Tab and through `showPreview`, including fully filtered lists; normal Dock hovers must still work afterward. With grouping enabled, close a sibling process's window and confirm its card disappears immediately after close confirmation.
 - Test overflowing previews with horizontal trackpad scrolling on a bottom Dock and vertical scrolling on side Docks. Check perpendicular gestures still work, compact Minimize all with a mixed list, sorting with a filtered foreground window, and filters excluding every window.
 - Test quick quit against disposable apps with duplicate names, a closed pinned launcher, magnification/autohide changes and overlapping preview/widget panels; only the clicked running app may receive quit.
 - Test live-to-compact app handover and closing pinned panels; old captures and hover peeks must stop. Grant/revoke Accessibility with only indicator or display lock installed. Confirm all-disabled widgets leave no timer or media consumer.
 - Test swipe, shake, middle/modifier triggers, hover activation, full-size peeking, normal drag-to-place, and pinned previews. Test grids on small displays and each Dock edge.
 - Test folders with protected access denied, hidden files, subfolders, more than 500 files, remembered sorts, opening items, pin/close and moving off the hover corridor.
 - Test media with Music, Spotify and other supported players, paused playback, unavailable Automation, lyrics consent/import/track changes, and simultaneous Dock/Island/lock-screen consumers. Confirm calendar consent and today's events without Dynamic Island.
+- Lock and unlock with music enabled, then disable the island. Confirm the adapter stops when no surface needs it, and stays running when a Dock media widget still owns it. Rearrange displays while locked and confirm rebuilding the lock-screen scene preserves playback.
 - Compile and execute AppleScript queries and controls against the developer app. Test disabled API, denied Accessibility/capture, stale IDs, bad JSON and excluded preview images.
 
 The gesture detector is adapted from [DockDoor's GPL-3.0-or-later implementation](https://github.com/ejbills/DockDoor/blob/7be384b46da66f380bf3a9bb24ee6c6476bbd0dc/DockDoor/Utilities/TrackpadSwipeTrigger.swift), with its attribution retained. Other additions integrate with Vorssaint's existing window, preview, media, lyrics and calendar services. This comparison covers DockDoor's public/free repository, not DockDoor Pro.

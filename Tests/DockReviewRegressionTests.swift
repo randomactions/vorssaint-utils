@@ -100,15 +100,22 @@ enum DockReviewRegressionTests {
     final class WindowPreviewProvider { static let shared = Work() }
     enum CompactLayout { static func compact(_ count: Int) -> Bool { count >= 2 } }
     final class Surface {
+        typealias NSRunningApplication = DockReviewRegressionTests.NSRunningApplication
+        typealias DockPreviewPreferences = DockReviewRegressionTests.DockPreviewPreferences
         typealias DockWidgetService = DockReviewRegressionTests.DockWidgetService
         typealias DockHit = DockReviewRegressionTests.DockHit
         typealias DockPreviewLayout = DockReviewRegressionTests.CompactLayout
         typealias WindowPreviewProvider = DockReviewRegressionTests.WindowPreviewProvider
+        typealias WindowEnumerator = DockReviewRegressionTests.WindowEnumerator
 
         let livePreviews = Work(), hoverPreview = Work()
         struct Prefetch { let app: DockReviewRegressionTests.NSRunningApplication; let windows: [SwitcherItem]? }
         var pendingHover: Prefetch?
         var isVisible = true, isPinned = false, hasEnteredPanel = false
+        var isRunning = true, externalSession = false
+        var cachedPreferences: DockPreviewPreferences?
+        var hit: DockHit?
+        var resizes = 0
         var currentSessionPID: pid_t?
         var currentAppName: String?
         var windows: [SwitcherItem] = []
@@ -119,9 +126,48 @@ enum DockReviewRegressionTests {
         func cancelPendingHover() { pendingHover = nil }
         func cancelPendingHide() {}
         func tearDownVisuals() { windows = []; previews = [:] }
-        func endSession() { stopSessionWork(); isVisible = false }
+        func endSession() { stopSessionWork(); isVisible = false; externalSession = false; windows = []; currentSessionPID = nil }
         func beginDockAutohideHold() {}
-        func showPanel(for hit: DockHit, itemCount: Int) { isVisible = true }
+        func showPanel(for hit: DockHit, itemCount: Int) { self.hit = hit; isVisible = true }
+        func resizePanelForCurrentWindows() { resizes += 1 }
+    }
+    enum WindowEnumerator {
+        static var candidates: [pid_t: [SwitcherItem]] = [:]
+        static func listWindows(for pid: pid_t, maximumCount: Int) -> [SwitcherItem] { candidates[pid] ?? [] }
+    }
+    enum LockMusicService { static var shared = NotchMusicCommandContract.Service() }
+    final class SourceWork {
+        var stops = 0
+        func stop() { stops += 1 }
+        func pause() { stops += 1 }
+        func syncWithPreferences() {}
+    }
+    enum DownloadService { static let shared = SourceWork() }
+    enum CalendarService { static let shared = SourceWork() }
+    enum AgentService { static let shared = SourceWork() }
+    enum LockSupport { static var enabled = true; static func isEnabled() -> Bool { enabled } }
+    enum CalendarSupport { static func chosenCountdowns() -> [String] { [] } }
+    final class LockSurface {
+        typealias NotchMusicService = DockReviewRegressionTests.LockMusicService
+        typealias NotchDownloadService = DockReviewRegressionTests.DownloadService
+        typealias NotchCalendarService = DockReviewRegressionTests.CalendarService
+        typealias AgentUsageService = DockReviewRegressionTests.AgentService
+        typealias NotchLockScreenSupport = DockReviewRegressionTests.LockSupport
+        typealias NotchCalendarSupport = DockReviewRegressionTests.CalendarSupport
+        final class NotchLockScreenModel {
+            struct Gates { var music = false, downloads = false, countdown = false, timeLeft = false, agents = false }
+            var playedWhileLocked = false, padlockOpen = false
+        }
+        final class Panel { func orderOut(_ sender: Any?) {} }
+        final class Space { var closed = false; func close() { closed = true } }
+        var model = NotchLockScreenModel(), wasLocked = false
+        var scene: [Panel] = [], island: Panel?, space: Space?
+        var playbackSubscription: NSObject?, screenObserver: NSObjectProtocol?, padlockWork: DispatchWorkItem?
+        func show(closingPadlock: Bool) {
+            guard space == nil else { return }
+            scene = [Panel()]; space = Space(); startSources(.init(music: true))
+        }
+        static func fadeOut(_ panel: Panel, after delay: TimeInterval, completion: @escaping () -> Void) { completion() }
     }
     final class IndicatorService { static let shared = Work() }
     final class LockService { static let shared = Work() }
@@ -172,18 +218,8 @@ enum DockReviewRegressionTests {
         let magnifiedTileSize: Double
     }
     struct DockHit { let app: NSRunningApplication; let iconFrame: CGRect; let preferences: DockPreviewPreferences }
-    final class Placement {
-        typealias NSRunningApplication = DockReviewRegressionTests.NSRunningApplication
-        typealias DockPreviewPreferences = DockReviewRegressionTests.DockPreviewPreferences
-        typealias DockHit = DockReviewRegressionTests.DockHit
-
-        var isRunning = true, externalSession = false
-        var cachedPreferences: DockPreviewPreferences?
-        var hit: DockHit?
-        func beginSession(_ hit: DockHit, external: Bool) { self.hit = hit }
-    }
-    static func item(_ id: CGWindowID, _ title: String, minimized: Bool = false) -> SwitcherItem {
-        SwitcherItem(id: String(id), title: title, appName: title, pid: 1, windowOwnerPID: 1,
+    static func item(_ id: CGWindowID, _ title: String, minimized: Bool = false, pid: pid_t = 1) -> SwitcherItem {
+        SwitcherItem(id: String(id), title: title, appName: title, pid: pid, windowOwnerPID: pid,
             windowID: id, isOnScreen: true, isAppHidden: false, isMinimized: minimized,
             isFullscreen: false, isOnHiddenSpace: false, frame: .zero)
     }
@@ -192,6 +228,8 @@ enum DockReviewRegressionTests {
         defer {
             for (key, value) in saved { if let value { UserDefaults.standard.set(value, forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) } }
             NSRunningApplication.inventory = []; DockAccessibility.current = []; WindowServerSupport.windows = []
+            WindowEnumerator.candidates = [:]; LockMusicService.shared.stop(consumer: .lockScreen)
+            LockMusicService.shared.stop(consumer: .island); LockMusicService.shared.stop(consumer: .dock)
             DockPreviewService.shared.inputExclusionFrames = []; DockWidgetService.shared.covered = false
             SessionActivity.shared.isActive = true; AppFeature.dockPreview.isAvailable = true
         }
@@ -312,12 +350,91 @@ enum DockReviewRegressionTests {
         replacement.beginSession(DockHit(app: appA, iconFrame: rect, preferences: DockPreviewPreferences(orientation: .bottom, autohide: false, tileSize: 48, magnification: false, magnifiedTileSize: 64)))
         suite.expect(!replacement.isVisible, "a handover to an app with no windows closes the old session")
         for orientation: DockPreviewOrientation in [.bottom, .left, .right] {
-            let placement = Placement()
+            Surface.candidates = [current, other]
+            let placement = Surface()
             placement.cachedPreferences = DockPreviewPreferences(orientation: orientation, autohide: true, tileSize: 48, magnification: true, magnifiedTileSize: 64)
             placement.show(for: appA, anchor: rect, external: true)
             suite.expect(placement.hit?.preferences.orientation == orientation && placement.externalSession, "scripted Dock anchors retain \(orientation) placement and external session lifetime")
             placement.show(for: appA, anchor: rect, external: true, centeredPlacement: true)
             suite.expect(placement.hit?.preferences.orientation == .bottom && placement.hit?.preferences.autohide == false, "native Command-Tab and fallback anchors use bottom placement independently of session lifetime")
         }
+        let external = Surface()
+        external.isVisible = false
+        external.cachedPreferences = DockPreviewPreferences(orientation: .bottom, autohide: false, tileSize: 48, magnification: false, magnifiedTileSize: 64)
+        Surface.candidates = []
+        external.show(for: appA, anchor: rect, external: true)
+        suite.expect(!external.isVisible && !external.externalSession, "an external app with no previewable windows does not suppress subsequent Dock hovers")
+        external.closePreviewPanel()
+        Surface.candidates = [current]
+        external.beginSession(DockHit(app: appB, iconFrame: rect, preferences: external.cachedPreferences!))
+        suite.expect(external.isVisible && !external.externalSession, "ordinary Dock preview still opens after an empty or fully filtered external request")
+        external.isPinned = true
+        external.show(for: appA, anchor: rect, external: true)
+        suite.expect(external.isPinned && !external.externalSession && external.currentSessionPID == appB.processIdentifier, "a rejected external request does not claim an existing pinned Dock session")
+        external.isPinned = false
+        external.show(for: appA, anchor: rect, external: true)
+        suite.expect(external.externalSession, "a successfully opened external panel retains its external lifetime")
+        external.closePreviewPanel()
+        suite.expect(!external.isVisible && !external.externalSession, "closing an external panel restores normal Dock hover handling")
+
+        let grouped = Surface(), primary = item(50, "Primary", pid: 101), sibling = item(51, "Sibling", pid: 102)
+        grouped.currentSessionPID = primary.pid
+        grouped.windows = [primary, sibling]; grouped.selectedWindowID = sibling.windowID
+        grouped.finishClosing(sibling, windowID: 51, attempt: 0)
+        suite.expect(grouped.windows == [primary] && grouped.selectedWindowID == nil && grouped.resizes == 1,
+                     "confirmed closing of a grouped sibling removes its dead card and resizes the main panel")
+        grouped.finishClosing(primary, windowID: 50, attempt: 0)
+        suite.expect(!grouped.isVisible && grouped.windows.isEmpty, "closing the last primary card still ends the panel session")
+        grouped.isVisible = true; grouped.windows = [sibling]
+        WindowEnumerator.candidates[sibling.pid] = [sibling]
+        grouped.finishClosing(sibling, windowID: 51, attempt: 2)
+        suite.expect(grouped.windows == [sibling], "an unconfirmed close never removes a live grouped window")
+        WindowEnumerator.candidates = [:]
+        grouped.windows = [item(51, "Replacement", pid: 103)]
+        grouped.finishClosing(sibling, windowID: 51, attempt: 0)
+        suite.expect(grouped.windows.count == 1 && grouped.windows[0].pid == 103, "a stale close callback cannot remove another process's replacement card")
+        grouped.isVisible = false; grouped.windows = [sibling]
+        grouped.finishClosing(sibling, windowID: 51, attempt: 0)
+        suite.expect(grouped.windows == [sibling], "a dismissed panel ignores delayed close confirmations")
+
+        LockMusicService.shared = NotchMusicCommandContract.Service()
+        let music = LockMusicService.shared, lock = LockSurface()
+        var session = NotchSessionState(); session.locked = true
+        lock.sync(session)
+        suite.expect(music.consumers.owners == [.lockScreen] && music.wantsPlayback, "the displayed lock scene acquires its playback consumer")
+        let launches = music.launches
+        session.locked = false
+        lock.sync(session, keepsMusicForHandoff: true)
+        suite.expect(lock.scene.isEmpty && music.consumers.owners == [.lockScreen] && music.wantsPlayback,
+                     "the early unlock hides the scene while keeping playback alive for the island handoff")
+        music.start(consumer: .island)
+        lock.sync(session)
+        suite.expect(music.consumers.owners == [.island] && music.wantsPlayback && music.launches == launches,
+                     "the final unlock sync releases lock-screen ownership without restarting the island's adapter")
+        music.stop(consumer: .island)
+        suite.expect(music.consumers.owners.isEmpty && !music.wantsPlayback && music.process == nil,
+                     "after unlocking, disabling the island stops the adapter instead of retaining a ghost lock-screen owner")
+        session.locked = true; lock.sync(session)
+        session.locked = false; lock.sync(session, keepsMusicForHandoff: true)
+        lock.sync(session)
+        suite.expect(music.consumers.owners.isEmpty && !music.wantsPlayback, "a handoff with no island demand releases the lock-screen adapter")
+        music.start(consumer: .dock)
+        session.locked = true; lock.sync(session)
+        session.locked = false; lock.sync(session, keepsMusicForHandoff: true)
+        lock.close()
+        suite.expect(music.consumers.owners == [.dock] && music.wantsPlayback,
+                     "close releases a hidden pending lock-screen consumer while preserving the Dock's independent demand")
+        music.stop(consumer: .dock)
+        suite.expect(!music.wantsPlayback, "closing the final Dock consumer stops playback after lock-screen teardown")
+        session.locked = true; lock.sync(session)
+        let rebuildLaunches = music.launches
+        lock.hide(unlocking: false, stopsSources: false, keepsMusic: true)
+        lock.sync(session)
+        suite.expect(music.consumers.owners == [.lockScreen] && music.launches == rebuildLaunches,
+                     "rebuilding a lock-screen scene retains one music owner without restarting playback")
+        session.locked = false; session.displaysSleeping = true
+        lock.sync(session, keepsMusicForHandoff: true)
+        suite.expect(music.consumers.owners.isEmpty && !music.wantsPlayback,
+                     "an unlock that cannot return the island releases playback instead of retaining a pending handoff")
     }
 }

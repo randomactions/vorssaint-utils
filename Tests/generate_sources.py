@@ -472,15 +472,22 @@ def main():
           + declaration("Sources/Vorssaint/UI/Switcher/DockPreviewPanelView.swift", "    private func minimizeAllWindows()").replace("private func", "func", 1) + "}\n"
           + "extension DockReviewRegressionTests.Surface {\n"
           + declaration(review_dock + "DockPreviewService.swift", "    private func stopSessionWork()").replace("private func", "func", 1)
-          + declaration(review_dock + "DockPreviewService.swift", "    private func beginSession(").replace("private func", "func", 1) + "}\n"
+          + declaration(review_dock + "DockPreviewService.swift", "    private func beginSession(").replace("private func", "func", 1)
+          + declaration(review_dock + "DockPreviewService.swift", "    func show(for app:")
+          + declaration(review_dock + "DockPreviewService.swift", "    func closePreviewPanel()", scope="final class DockPreviewService:")
+          + declaration(review_dock + "DockPreviewService.swift", "    private func finishClosing(", scope="final class DockPreviewService:").replace("private func", "func", 1)
+          + declaration(review_dock + "DockPreviewService.swift", "    private func applyClosedWindowRemoval(").replace("private func", "func", 1) + "}\n"
+          + "extension DockReviewRegressionTests.LockSurface {\n"
+          + "".join(declaration("Sources/Vorssaint/Services/Notch/NotchLockScreenService.swift", prefix)
+                    .replace("private func", "func", 1) for prefix in [
+                        "    func sync(", "    func close()", "    private func startSources(",
+                        "    private func releaseSources(", "    private func hide("]) + "}\n"
           + "extension DockReviewRegressionTests.Runtime {\n"
           + declaration(review_dock + "DockAdditionsRuntime.swift", "    private func run(").replace("private func", "func", 1)
           + declaration(review_dock + "DockAdditionsRuntime.swift", "    func stop()") + "}\n"
           + "extension DockReviewRegressionTests.WidgetSync {\n"
           + declaration(review_dock + "DockWidgetService.swift", "    func syncWithPreferences()")
-          + declaration(review_dock + "DockWidgetService.swift", "    func stop()") + "}\n"
-          + "extension DockReviewRegressionTests.Placement {\n"
-          + declaration(review_dock + "DockPreviewService.swift", "    func show(for app:") + "}\n")
+          + declaration(review_dock + "DockWidgetService.swift", "    func stop()") + "}\n")
     dock = "Sources/Vorssaint/Services/DockPreview/DockPreviewService.swift"
     write("WindowEnhancementAction.swift", "import Foundation\n" + declaration(
         "Sources/Vorssaint/Services/DockPreview/WindowEnhancementActions.swift", "enum WindowEnhancementAction:"))
