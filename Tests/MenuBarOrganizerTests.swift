@@ -24,6 +24,21 @@ enum MenuBarOrganizerTests {
         suite.expect(MenuBarOrganizerPolicy.searchScore(query: "mw", name: "Window Manager") == nil, "reversed fuzzy characters do not match")
         suite.expect(MenuBarOrganizerPolicy.searchScore(query: "xyz", name: "Bluetooth") == nil, "unmatched query is excluded")
 
+        suite.expect(MenuBarOrganizerSupport.sourceIdentifier(nil, siblingCount: 1)
+                     == MenuBarOrganizerSupport.singleItemIdentifier,
+                     "a single AX-proven untitled app item has a stable slot")
+        suite.expect(MenuBarOrganizerSupport.sourceIdentifier(nil, siblingCount: 2) == nil,
+                     "multiple untitled app items are not guessed by index")
+        suite.expect(MenuBarOrganizerSupport.sourceIdentifier("named", siblingCount: 2) == "named",
+                     "explicit AX identifiers take precedence over singleton fallback")
+        let hosted = MenuBarOrganizerWindowRecord(windowID: 999, ownerPID: 1,
+            ownerName: "Control Center", ownerBundleIdentifier: MenuBarOrganizerSupport.controlCenterBundleIdentifier,
+            title: "Item-1", frame: CGRect(x: 10, y: 0, width: 24, height: 24), layer: 25, alpha: 1, isOnScreen: true)
+        let singleton = MenuBarItemSourceIdentity(pid: 2, bundleIdentifier: "test.single", name: "Single",
+            axIdentifier: MenuBarOrganizerSupport.sourceIdentifier(nil, siblingCount: 1), axTitle: nil)
+        suite.expect(MenuBarOrganizerSupport.identities(for: [hosted], sources: [999: singleton])[999]?.state == .stable,
+                     "resolved single-item app becomes movable despite an empty AX title")
+
         let a = item(id: "a", window: 1, x: 10)
         let b = item(id: "b", window: 2, x: 40)
         let c = item(id: "c", window: 3, x: 70)

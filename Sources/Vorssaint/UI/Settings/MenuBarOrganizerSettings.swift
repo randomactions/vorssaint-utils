@@ -37,7 +37,7 @@ struct MenuBarOrganizerEditor: View {
                 Button(text.refresh) { service.refresh() }.disabled(!service.isRunning || service.isBusy)
                 Button(text.undo) { service.undoLastMove() }.disabled(!canArrange || !service.canUndo)
             }
-            HStack(alignment: .top, spacing: 10) {
+            VStack(spacing: 12) {
                 ForEach(MenuBarOrganizerSection.allCases) { section in
                     category(section)
                 }
@@ -80,20 +80,24 @@ struct MenuBarOrganizerEditor: View {
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 Text(title(section)).font(.subheadline.weight(.semibold))
-                Spacer(minLength: 4)
                 Text(items.count, format: .number).font(.caption).foregroundStyle(.secondary)
+                Spacer(minLength: 4)
+                Text(caption(section)).font(.caption).foregroundStyle(.secondary)
             }
-            Text(caption(section)).font(.caption).foregroundStyle(.secondary)
-                .frame(minHeight: 42, alignment: .topLeading)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 76), spacing: 6)], spacing: 6) {
-                ForEach(matches) { item in itemCell(item, section: section) }
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: 8) {
+                    ForEach(matches) { item in itemCell(item, section: section) }
+                    Text(matches.isEmpty && !query.isEmpty ? text.empty : labels.drop)
+                        .font(.caption).foregroundStyle(.secondary)
+                        .frame(width: matches.isEmpty ? 240 : 96, height: 64)
+                }
+                .padding(.vertical, 4)
             }
-            Text(matches.isEmpty && !query.isEmpty ? text.empty : labels.drop)
-                .font(.caption).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, minHeight: matches.isEmpty ? 96 : 32)
+            .frame(height: 84)
+
         }
         .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 220, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(0.1)))
         .contentShape(Rectangle())
@@ -105,14 +109,21 @@ struct MenuBarOrganizerEditor: View {
     @ViewBuilder private func itemCell(_ item: ManagedMenuBarItem, section: MenuBarOrganizerSection) -> some View {
         let tile = VStack(spacing: 5) {
             MenuBarItemThumbnail(item: item).frame(width: 24, height: 24)
+                .overlay(alignment: .bottomTrailing) {
+                    if !item.isMovable {
+                        Image(systemName: "lock.fill").font(.system(size: 8))
+                            .padding(2).background(.background, in: Circle())
+                    }
+                }
             Text(item.displayName).font(.caption2).lineLimit(2).multilineTextAlignment(.center)
-            if !item.isMovable { Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary) }
         }
-        .frame(maxWidth: .infinity, minHeight: 76)
+        .frame(width: 68, height: 64)
         .padding(4)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.65), in: RoundedRectangle(cornerRadius: 7))
         .help(item.isMovable ? item.displayName : "\(item.displayName) — \(labels.locked)")
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(item.displayName)
+        .accessibilityAddTraits(.isButton)
         .contextMenu {
             ForEach(MenuBarOrganizerSection.allCases) { destination in
                 Button(title(destination)) { service.move(id: item.id, before: nil, to: destination) }

@@ -110,6 +110,17 @@ enum MenuBarOrganizerSupport {
     static let controlCenterBundleIdentifier = "com.apple.controlcenter"
     static let systemUIServerBundleIdentifier = "com.apple.systemuiserver"
 
+    // An AX-proven app with exactly one status item has an unambiguous slot even
+    // when AppKit supplies neither a title nor an identifier. Multiple untitled
+    // slots must remain provisional; window-number ordering cannot identify them.
+    static let singleItemIdentifier = "vorssaint.single-status-item"
+    static func sourceIdentifier(_ identifier: String?, siblingCount: Int) -> String? {
+        if let identifier, !identifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return identifier
+        }
+        return siblingCount == 1 ? singleItemIdentifier : nil
+    }
+
 
     static func section(itemMidX: CGFloat,
                         hiddenDividerMidX: CGFloat?,

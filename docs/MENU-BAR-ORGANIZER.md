@@ -6,15 +6,18 @@ move an item to another group in Settings to make it available again.
 
 ## Arrange icons
 
-Settings shows Visible, Hidden and Always Hidden together, with app icons and
-names for detected running apps' menu-bar items. It cannot discover status items
+Settings shows Visible, Hidden and Always Hidden as three horizontal, scrollable
+rows. Icons run left to right in their real menu-bar order, with app names for
+detected running apps' menu-bar items. It cannot discover status items
 for applications that are not running. Basic hiding needs no permission. On
 macOS 14–26, grant Accessibility in the editor to arrange items or use the drawer.
 There is no separate advanced-mode switch. Inventory remains read-only without
 Accessibility; system-hosted status items may also require that permission for
 geometry discovery. Unavailable inventory is reported explicitly. Drag before a tile or onto a group's end; the context menu offers
 the same group choices. Undo restores the last successful move. Protected or
-ambiguous items stay visible in the editor but cannot be moved.
+ambiguous items stay visible in the editor but cannot be moved. An app with
+exactly one AX-proven status item can be arranged even when that item has no
+title or identifier; multiple unnamed items remain ambiguous.
 
 The drawer scrolls independently of menu-bar width. Search supports fuzzy
 matches, arrow navigation, Return and Escape. Always Hidden items are excluded

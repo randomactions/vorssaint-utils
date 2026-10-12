@@ -37,7 +37,9 @@ final class MenuBarWindowProvider {
                 let source = resolved.source
                 let bundleIdentifier = source?.bundleIdentifier
                     ?? record.ownerBundleIdentifier
-                let title = source?.stableTitle ?? record.title
+                let identityTitle = source?.stableTitle ?? record.title
+                let title = source?.axTitle?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmptyForDisplay
+                    ?? (identityTitle == MenuBarOrganizerSupport.singleItemIdentifier ? "" : identityTitle)
                 let protected = MenuBarOrganizerPolicy.isOwnItem(
                     ownerPID: record.ownerPID, sourcePID: source?.pid, bundleIdentifier: bundleIdentifier,
                     currentPID: currentPID, currentBundleIdentifier: currentBundleIdentifier)
@@ -187,4 +189,8 @@ final class MenuBarWindowProvider {
             alpha: (dictionary[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1,
             isOnScreen: (dictionary[kCGWindowIsOnscreen as String] as? NSNumber)?.boolValue ?? false)
     }
+}
+
+private extension String {
+    var nonEmptyForDisplay: String? { isEmpty ? nil : self }
 }

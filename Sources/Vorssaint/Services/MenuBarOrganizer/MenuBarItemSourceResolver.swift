@@ -210,7 +210,8 @@ actor MenuBarItemSourceResolver {
                 pid: pid,
                 bundleIdentifier: app.bundleIdentifier,
                 name: app.name,
-                axIdentifier: attribute(kAXIdentifierAttribute, from: child),
+                axIdentifier: MenuBarOrganizerSupport.sourceIdentifier(
+                    attribute(kAXIdentifierAttribute, from: child), siblingCount: children.count),
                 axTitle: attribute(kAXTitleAttribute, from: child))
             return AXItemRecord(source: source, frame: frame)
         }
