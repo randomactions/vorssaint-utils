@@ -21,6 +21,19 @@ enum MenuBarOrganizerPolicy {
             && frame.width > 0 && frame.width < 2_048 && frame.height > 0 && frame.height <= 64
     }
 
+    /// Our own spacers deliberately span the display; ordinary item bounds
+    /// remain limited separately so a malformed app window cannot become a tile.
+    static func validSpacerFrame(_ frame: CGRect, maximumWidth: CGFloat) -> Bool {
+        [frame.minX, frame.minY, frame.width, frame.height, maximumWidth].allSatisfy(\.isFinite)
+            && frame.width > 0 && frame.width <= maximumWidth
+            && frame.height > 0 && frame.height <= 64
+    }
+
+    static func insertionFrame(_ frame: CGRect, after: Bool) -> CGRect {
+        CGRect(x: after ? frame.maxX - 1 : frame.minX, y: frame.minY,
+               width: 1, height: frame.height)
+    }
+
     /// Search all words in order within the name, then prefer contiguous matches.
     static func searchScore(query: String, name: String) -> Int? {
         let query = query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)

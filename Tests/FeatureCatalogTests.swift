@@ -1283,6 +1283,15 @@ enum FeatureCatalogTests {
             DefaultsKey.windowGestureEnabled,
             DefaultsKey.windowEdgeSnapEnabled,
         ]
+        suite.expect(!AppFeature.menuBarHider.monitorsPermissionChanges(boolFor: { _ in true }),
+                     "optional organizer Accessibility does not poll while the basic hider is idle")
+        var spacingRestores = 0
+        suite.expect(!AppFeature.menuBarHider.prepareForRemoval { spacingRestores += 1; return false }
+                     && spacingRestores == 1, "failed spacing restore refuses feature removal")
+        suite.expect(AppFeature.menuBarHider.prepareForRemoval { spacingRestores += 1; return true }
+                     && spacingRestores == 2, "successful spacing restore permits feature removal")
+        suite.expect(AppFeature.screenshot.prepareForRemoval { spacingRestores += 1; return false }
+                     && spacingRestores == 2, "unrelated feature removal does not touch menu bar spacing")
         suite.expect(!AppFeature.windowLayout.monitorsPermissionChanges(boolFor: { _ in false })
                && !AppFeature.windowLayout.monitorsPermissionChanges {
                    $0 == DefaultsKey.screenshotShortcutEnabled

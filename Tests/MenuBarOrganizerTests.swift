@@ -16,6 +16,22 @@ enum MenuBarOrganizerTests {
                     CGRect(x: 0, y: 0, width: 24, height: 80)] {
             suite.expect(!MenuBarOrganizerPolicy.validFrame(bad), "invalid geometry never authorizes input")
         }
+        for width: CGFloat in [2_568, 6_024, 7_688] {
+            let spacer = CGRect(x: -width, y: 0, width: width, height: 24)
+            suite.expect(MenuBarOrganizerPolicy.validSpacerFrame(spacer, maximumWidth: width),
+                         "a full-width display spacer is valid independently of ordinary items")
+            suite.expect(!MenuBarOrganizerPolicy.validFrame(spacer), "wide spacers never become movable app tiles")
+            for after in [false, true] {
+                let insertion = MenuBarOrganizerPolicy.insertionFrame(spacer, after: after)
+                suite.expect(MenuBarOrganizerPolicy.validFrame(insertion)
+                             && (after ? insertion.maxX == spacer.maxX : insertion.minX == spacer.minX),
+                             "spacer insertion targets preserve the intended edge with narrow valid bounds")
+            }
+            suite.expect(!MenuBarOrganizerPolicy.validSpacerFrame(spacer, maximumWidth: width - 1),
+                         "spacers wider than the measured screen limit are rejected")
+        }
+        suite.expect(!MenuBarOrganizerPolicy.validSpacerFrame(CGRect(x: 0, y: 0, width: CGFloat.infinity, height: 24), maximumWidth: 8_000),
+                     "non-finite spacers fail closed")
         suite.expect(MenuBarOrganizerPolicy.validFrame(CGRect(x: -1_920, y: -24, width: 24, height: 24)),
                      "negative coordinates on an external display remain valid")
         suite.expect(MenuBarOrganizerPolicy.searchScore(query: "", name: "Wi-Fi") == 0, "empty query shows inventory")

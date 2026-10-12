@@ -117,10 +117,14 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
         func windowID(_ item: NSStatusItem?) -> CGWindowID? {
             item?.button?.window.flatMap { MenuBarHiderSupport.statusWindowID($0.windowNumber) }
         }
+        let maximumSpacerWidth = (NSScreen.screens.map { $0.frame.width }.max()
+            ?? MenuBarHiderSupport.fallbackUsableWidth) + MenuBarHiderSupport.expansionMargin
         let ids = [windowID(toggleItem), windowID(physicalSeparatorItem), windowID(physicalAlwaysHiddenItem)]
         if let hiddenID = windowID(separatorItem), let alwaysID = windowID(alwaysHiddenItem),
            let hidden = MenuBarWindowServerBridge.frame(of: hiddenID),
-           let always = MenuBarWindowServerBridge.frame(of: alwaysID) {
+           let always = MenuBarWindowServerBridge.frame(of: alwaysID),
+           MenuBarOrganizerPolicy.validSpacerFrame(hidden, maximumWidth: maximumSpacerWidth),
+           MenuBarOrganizerPolicy.validSpacerFrame(always, maximumWidth: maximumSpacerWidth) {
             return (hidden, always, Set(ids.compactMap { $0 }))
         }
         // System-hosted status items can have placeholder NSWindow numbers.
@@ -141,8 +145,8 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
         }
         guard isEnabled, !Task.isCancelled, expectedGeneration == separatorMeasurementGeneration,
               expectedRoles == separatorRolesSwapped, let positions,
-              MenuBarOrganizerPolicy.validFrame(positions.normal),
-              MenuBarOrganizerPolicy.validFrame(positions.permanent) else { return nil }
+              MenuBarOrganizerPolicy.validSpacerFrame(positions.normal, maximumWidth: maximumSpacerWidth),
+              MenuBarOrganizerPolicy.validSpacerFrame(positions.permanent, maximumWidth: maximumSpacerWidth) else { return nil }
         var excluded = Set(ids.compactMap { $0 })
         for id in MenuBarWindowServerBridge.menuBarWindowIDs() ?? [] {
             guard let frame = MenuBarWindowServerBridge.frame(of: id) else { continue }

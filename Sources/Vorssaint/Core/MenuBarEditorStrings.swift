@@ -4,6 +4,7 @@
 import Foundation
 
 struct MenuBarEditorStrings {
+    let removalFailed: String
     let inventory: String
     let visible: String
     let hidden: String
@@ -17,6 +18,7 @@ extension FeatureStrings {
     static func menuBarEditor(_ language: AppLanguage) -> MenuBarEditorStrings {
         switch language {
         case .enUS: return MenuBarEditorStrings(
+            removalFailed: "The previous icon spacing could not be restored. The feature remains installed so you can retry Restore.",
             inventory: "Menu-bar items from running apps appear here. Drag an icon between groups, or right-click to move it.",
             visible: "Always shown in the menu bar.",
             hidden: "Shown and hidden with ○.",
@@ -26,6 +28,7 @@ extension FeatureStrings {
             unavailable: "Menu-bar items could not be read. Grant Accessibility if needed, then click Refresh."
         )
         case .ptBR: return MenuBarEditorStrings(
+            removalFailed: "Não foi possível restaurar o espaçamento anterior. O recurso continua instalado para você tentar Restaurar novamente.",
             inventory: "Aqui aparecem os itens dos apps em execução. Arraste um ícone entre os grupos ou clique com o botão direito para movê-lo.",
             visible: "Sempre visíveis na barra de menus.",
             hidden: "Mostrados e ocultados com ○.",
@@ -35,6 +38,7 @@ extension FeatureStrings {
             unavailable: "Não foi possível ler os itens. Permita Acessibilidade se necessário e clique em Atualizar."
         )
         case .ru: return MenuBarEditorStrings(
+            removalFailed: "Не удалось восстановить прежний интервал значков. Функция остаётся установленной, чтобы можно было повторить восстановление.",
             inventory: "Здесь показаны значки работающих приложений. Перетащите значок в другую группу или выберите её в контекстном меню.",
             visible: "Всегда видны в строке меню.",
             hidden: "Показываются и скрываются кнопкой ○.",
@@ -44,6 +48,7 @@ extension FeatureStrings {
             unavailable: "Не удалось прочитать значки. При необходимости разрешите Универсальный доступ и нажмите «Обновить»."
         )
         case .uk: return MenuBarEditorStrings(
+            removalFailed: "Не вдалося відновити попередній інтервал значків. Функція залишається встановленою, щоб ви могли повторити відновлення.",
             inventory: "Тут показано значки запущених програм. Перетягніть значок між групами або виберіть групу в контекстному меню.",
             visible: "Завжди видимі в смузі меню.",
             hidden: "Показуються та приховуються кнопкою ○.",
@@ -53,6 +58,7 @@ extension FeatureStrings {
             unavailable: "Не вдалося прочитати значки. За потреби надайте Доступність і натисніть «Оновити»."
         )
         case .es: return MenuBarEditorStrings(
+            removalFailed: "No se pudo restaurar el espaciado anterior. La función sigue instalada para que puedas volver a restaurarlo.",
             inventory: "Aquí aparecen los iconos de las apps en ejecución. Arrástralos entre grupos o haz clic derecho para moverlos.",
             visible: "Siempre visibles en la barra de menús.",
             hidden: "Se muestran y ocultan con ○.",
@@ -62,6 +68,7 @@ extension FeatureStrings {
             unavailable: "No se pudieron leer los iconos. Permite Accesibilidad si es necesario y pulsa Actualizar."
         )
         case .de: return MenuBarEditorStrings(
+            removalFailed: "Der vorherige Symbolabstand konnte nicht wiederhergestellt werden. Die Funktion bleibt installiert, damit du es erneut versuchen kannst.",
             inventory: "Hier erscheinen Menüleistensymbole laufender Apps. Ziehe ein Symbol in eine Gruppe oder verschiebe es per Rechtsklick.",
             visible: "Immer in der Menüleiste sichtbar.",
             hidden: "Mit ○ ein- und ausblenden.",
@@ -71,6 +78,7 @@ extension FeatureStrings {
             unavailable: "Die Symbole konnten nicht gelesen werden. Erlaube bei Bedarf Bedienungshilfen und klicke auf Aktualisieren."
         )
         case .fr: return MenuBarEditorStrings(
+            removalFailed: "Impossible de rétablir l’espacement précédent. La fonction reste installée pour vous permettre de réessayer.",
             inventory: "Les icônes des apps en cours apparaissent ici. Glissez une icône entre les groupes ou déplacez-la par clic droit.",
             visible: "Toujours visibles dans la barre des menus.",
             hidden: "Affichées et masquées avec ○.",
@@ -80,6 +88,7 @@ extension FeatureStrings {
             unavailable: "Impossible de lire les icônes. Autorisez Accessibilité si nécessaire, puis actualisez."
         )
         case .it: return MenuBarEditorStrings(
+            removalFailed: "Impossibile ripristinare la spaziatura precedente. La funzione resta installata per consentire un nuovo tentativo.",
             inventory: "Qui appaiono le icone delle app in esecuzione. Trascina un’icona tra i gruppi o spostala con un clic destro.",
             visible: "Sempre visibili nella barra dei menu.",
             hidden: "Mostrate e nascoste con ○.",
@@ -89,6 +98,7 @@ extension FeatureStrings {
             unavailable: "Impossibile leggere le icone. Consenti Accessibilità se necessario, poi aggiorna."
         )
         case .sk: return MenuBarEditorStrings(
+            removalFailed: "Predchádzajúce rozostupy ikon sa nepodarilo obnoviť. Funkcia zostáva nainštalovaná, aby ste mohli obnovenie skúsiť znova.",
             inventory: "Tu sa zobrazujú ikony spustených aplikácií. Presuňte ikonu medzi skupinami alebo použite pravé tlačidlo myši.",
             visible: "Vždy viditeľné v lište menu.",
             hidden: "Zobrazujú a skrývajú sa pomocou ○.",
@@ -98,6 +108,7 @@ extension FeatureStrings {
             unavailable: "Ikony sa nepodarilo načítať. V prípade potreby povoľte Prístupnosť a obnovte zoznam."
         )
         case .ja: return MenuBarEditorStrings(
+            removalFailed: "以前のアイコン間隔を復元できませんでした。再試行できるよう、この機能はインストールされたままです。",
             inventory: "実行中のアプリのメニューバー項目を表示します。アイコンを別のグループにドラッグするか、右クリックして移動できます。",
             visible: "メニューバーに常に表示します。",
             hidden: "○ で表示・非表示を切り替えます。",
@@ -107,6 +118,7 @@ extension FeatureStrings {
             unavailable: "メニューバー項目を読み取れません。必要に応じてアクセシビリティを許可し、更新してください。"
         )
         case .ko: return MenuBarEditorStrings(
+            removalFailed: "이전 아이콘 간격을 복원하지 못했습니다. 다시 복원할 수 있도록 기능은 설치된 상태로 유지됩니다.",
             inventory: "실행 중인 앱의 메뉴 막대 항목이 표시됩니다. 아이콘을 다른 그룹으로 드래그하거나 오른쪽 클릭하여 이동하세요.",
             visible: "메뉴 막대에 항상 표시됩니다.",
             hidden: "○로 표시하거나 숨깁니다.",
@@ -116,6 +128,7 @@ extension FeatureStrings {
             unavailable: "메뉴 막대 항목을 읽을 수 없습니다. 필요한 경우 손쉬운 사용을 허용한 후 새로 고침하세요."
         )
         case .zhHans: return MenuBarEditorStrings(
+            removalFailed: "无法恢复原来的图标间距。此功能将保留安装，以便您重试恢复。",
             inventory: "这里显示正在运行的应用的菜单栏项目。将图标拖到其他分组，或右键点击以移动。",
             visible: "始终显示在菜单栏中。",
             hidden: "通过 ○ 显示或隐藏。",
@@ -125,6 +138,7 @@ extension FeatureStrings {
             unavailable: "无法读取菜单栏项目。请按需允许辅助功能，然后刷新。"
         )
         case .zhTW: return MenuBarEditorStrings(
+            removalFailed: "無法還原原來的圖示間距。此功能會保持安裝，讓您可以重試還原。",
             inventory: "這裡顯示執行中 App 的選單列項目。將圖示拖到其他群組，或按右鍵移動。",
             visible: "一律顯示在選單列中。",
             hidden: "透過 ○ 顯示或隱藏。",
@@ -134,6 +148,7 @@ extension FeatureStrings {
             unavailable: "無法讀取選單列項目。請視需要允許輔助使用，然後重新整理。"
         )
         case .zhHK: return MenuBarEditorStrings(
+            removalFailed: "無法還原原來的圖示間距。此功能將保持安裝，以便您重試還原。",
             inventory: "這裡顯示執行中 App 的選單列項目。將圖像拖到其他群組，或按右鍵移動。",
             visible: "一律顯示在選單列中。",
             hidden: "透過 ○ 顯示或隱藏。",
@@ -143,6 +158,7 @@ extension FeatureStrings {
             unavailable: "無法讀取選單列項目。請視需要允許輔助使用，然後重新整理。"
         )
         case .tr: return MenuBarEditorStrings(
+            removalFailed: "Önceki simge aralığı geri yüklenemedi. Yeniden deneyebilmeniz için özellik yüklü kalır.",
             inventory: "Çalışan uygulamaların menü çubuğu simgeleri burada görünür. Bir simgeyi gruplar arasında sürükleyin veya taşımak için sağ tıklayın.",
             visible: "Menü çubuğunda her zaman görünür.",
             hidden: "○ ile gösterilir ve gizlenir.",

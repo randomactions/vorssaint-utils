@@ -276,12 +276,14 @@ final class MenuBarOrganizerService: ObservableObject {
             let lastVisible = section == .visible && targetItem == nil
                 ? MenuBarOrganizerSupport.orderedItems(items, in: .visible).last(where: { $0.id != id }) : nil
             guard let destination = targetItem?.frame ?? lastVisible?.frame ?? divider else { throw MenuBarItemMoveError.itemUnavailable }
-            let quartzDestination = CGRect(x: destination.minX, y: item.frame.minY,
-                                           width: destination.width, height: item.frame.height)
+            let placeAfter = targetItem == nil && section == .visible
+            let insertion = MenuBarOrganizerPolicy.insertionFrame(destination, after: placeAfter)
+            let quartzDestination = CGRect(x: insertion.minX, y: item.frame.minY,
+                                           width: insertion.width, height: item.frame.height)
             // A native item belongs to one menu bar; do not drag across displays.
             guard abs(destination.midY - item.frame.midY) < 8 else { throw MenuBarItemMoveError.itemUnavailable }
             try await mover.move(item: item, destinationFrame: quartzDestination,
-                                 placeAfter: targetItem == nil && section == .visible,
+                                 placeAfter: placeAfter,
                                  onDragStart: { [weak self] in self?.activationRecovery?.mayBeDisplaced = true })
             try await Task.sleep(for: .milliseconds(180 + attempt * 80))
             guard await snapshot(expected: expected) != nil else { throw MenuBarItemMoveError.itemUnavailable }

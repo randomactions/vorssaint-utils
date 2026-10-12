@@ -83,11 +83,16 @@ extension AppFeature {
         // Watch asks when an area is chosen and checks on every reading. The
         // companion uses no permission at all.
         case .screenOCR, .cleaningMode, .screenshot, .commandBar, .screenRecorder, .wallpaper, .notchWatch,
-             .notchMascot:
+             .notchMascot, .menuBarHider:
             return false
         default:
             return true
         }
+    }
+
+    /// Restoration must succeed before the hub can hide its recovery controls.
+    func prepareForRemoval(restoreMenuBarSpacing: () -> Bool) -> Bool {
+        self != .menuBarHider || restoreMenuBarSpacing()
     }
 
     var monitorsPermissionChanges: Bool {
