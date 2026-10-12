@@ -336,6 +336,40 @@ enum MenuBarHiderRuntimeTests {
         suite.expect(!host.organizerHoldsExpansion && host.autoCollapseTimer != nil,
                      "finishing a native menu resumes the user's automatic collapse preference")
 
+        defaults.set(false, forKey: DefaultsKey.menuBarHiderAutoCollapse)
+        defaults.set(true, forKey: DefaultsKey.menuBarHiderAlwaysHiddenEnabled)
+        for state in [MenuBarHiderSupport.DisplayState.collapsed, .expanded, .showAll] {
+            switch state {
+            case .collapsed: host.collapse()
+            case .expanded: host.expand()
+            case .showAll: host.showAll()
+            }
+            let previous = host.organizerDisplayState
+            host.beginOrganizerOperation()
+            host.showAll(startTimer: false)
+            host.restoreAfterOrganizerActivation(previous)
+            suite.expect(host.organizerDisplayState == state && !host.organizerHoldsExpansion
+                            && host.autoCollapseTimer == nil,
+                         "activation restores all three display modes even with auto-collapse off")
+        }
+        host.collapse()
+        let beforeConfiguration = host.organizerDisplayState
+        host.beginOrganizerOperation()
+        host.showAll(startTimer: false)
+        host.beginConfigurationMode()
+        host.restoreAfterOrganizerActivation(beforeConfiguration)
+        suite.expect(host.isConfiguring && host.isShowingAll && !host.organizerHoldsExpansion,
+                     "activation does not collapse the bar when configuration started during the operation")
+        host.endConfigurationMode()
+        host.beginOrganizerOperation()
+        host.showAll(startTimer: false)
+        defaults.set(false, forKey: DefaultsKey.menuBarHiderEnabled)
+        host.syncWithPreferences()
+        let disabledAppearances = host.appearances
+        host.restoreAfterOrganizerActivation(.collapsed)
+        suite.expect(!host.isEnabled && !host.organizerHoldsExpansion && host.appearances == disabledAppearances,
+                     "restoration cannot recreate disabled controls")
+
         let role = GlobalShortcutRole.menuBarHider
         suite.expect(role.requiredEnableKeys.contains(DefaultsKey.menuBarHiderEnabled),
                      "shortcut conflict checks use the same main enable gate as registration")

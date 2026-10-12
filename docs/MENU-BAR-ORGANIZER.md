@@ -19,7 +19,9 @@ Recording is not required. Some system items therefore use a generic icon.
 
 Activating a hidden item temporarily moves its real status item into the visible
 section, opens its native menu, then restores its original position after the
-menu closes. Unknown, duplicate, protected, stale or unresolved item identities
+menu closes, including the prior collapsed, normally expanded, or show-all
+state. Normally expanded restores concealment of always-hidden items even when
+auto-collapse is off. Unknown, duplicate, protected, stale or unresolved item identities
 are refused. Failed operations leave the bar revealed for manual recovery;
 they are reported rather than treated as completed. Disable, uninstall and quit
 cancel operations and release pending mouse input and cursor suppression.
@@ -41,7 +43,12 @@ Restore previous spacing restores both prior values, including removing a key
 that was originally absent. The first Apply preserves the original values until
 Restore succeeds, even across subsequent Apply operations or app restarts.
 Restore remains available when the hider is disabled. This recovery state is
-local to this Mac and is excluded from settings backup. The desired spacing and
+local to this Mac and is excluded from settings backup. Complete uninstall
+restores spacing first and stops if restoration fails or the recovery data is
+unreadable. The command-line uninstaller also keeps outstanding recovery data
+when the installed binary is missing or too old to restore it. Clearing
+permissions stops organizer input before revoking Accessibility and retains the
+spacing choice. The desired spacing and
 other organizer preferences participate in normal backups.
 
 ## Appearance

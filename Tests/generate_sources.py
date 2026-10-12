@@ -81,6 +81,7 @@ def main():
                     for prefix in [
                         "    func syncWithPreferences()", "    func resetSeparatorPositions()",
                         "    func beginOrganizerOperation()", "    func endOrganizerOperation(",
+                        "    var organizerDisplayState:", "    func restoreAfterOrganizerActivation(",
                         "    func resumeAfterOrganizerOperation()",
                         "    private func syncHotkey()", "    private func teardown()", "    private func setupScrollMonitor()",
                         "    func toggle()", "    func expand(", "    func collapse()", "    func showAll(",
@@ -1676,9 +1677,14 @@ def main():
           + "}\n}\n")
 
     self_uninstall = "Sources/Vorssaint/Services/SelfUninstall.swift"
+    # Exercise the actual pre-TCC teardown, replacing unrelated services only.
+    suspend = declaration(self_uninstall, "    private static func suspendInputInterceptors()")
+    for service in set(re.findall(r"(\w+)\.shared\.", suspend)):
+        if service not in {"MenuBarOrganizerService", "MouseAccelerationService"}:
+            suspend = suspend.replace(service + ".shared.", "NoopInputService.shared.")
     write("SelfUninstallRemoval.swift", "import Foundation\n\nextension SelfUninstallContract {\nenum Host {\n"
           + "static let bundleID = \"test\"\n"
-          + "static func suspendInputInterceptors() -> Bool { events.append(\"suspend\"); return suspensionAllowed }\n"
+          + suspend.replace("private static", "static", 1)
           + "static func restoreSleepBeforeRemoval() -> Bool { events.append(\"sleep\"); return sleepRestoreAllowed }\n"
           + "static func detachFanControl() -> Bool { events.append(\"fan\"); return detachAllowed }\n"
           + "static func detachLoginItem() { events.append(\"login\") }\n"
@@ -1691,6 +1697,11 @@ def main():
           + declaration(self_uninstall, "    private static func removeSudoersRuleIfPresent(")
           + declaration(self_uninstall, "    private static func resetTCC(")
             .replace("private static", "@discardableResult static", 1)
+          + "}\n}\n")
+
+    write("CommandLineUninstallRemoval.swift", "import Foundation\n\nextension SelfUninstallContract {\nenum CLI {\n"
+          + declaration("Sources/Vorssaint/Support/Uninstaller.swift", "    static func runAndExit()")
+            .replace("-> Never", "-> Int32").replace("exit(", "return (")
           + "}\n}\n")
 
     downloads = "Sources/Vorssaint/Services/Notch/NotchDownloadService.swift"

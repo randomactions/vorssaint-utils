@@ -43,6 +43,15 @@ enum MenuBarGlobalSpacing {
         return true
     }
 
+    /// Removal may delete the only recovery snapshot. Missing state is a no-op;
+    /// malformed or failed restoration must keep the app and its preferences.
+    static func restoreForRemoval(defaults: UserDefaults = .standard,
+                                  read: () -> Saved = readCurrent,
+                                  write: (Saved) -> Bool = writeCurrent) -> Bool {
+        guard defaults.object(forKey: restoreKey) != nil else { return true }
+        return restore(defaults: defaults, read: read, write: write)
+    }
+
     private static func readCurrent() -> Saved {
         func value(_ key: String) -> Int? {
             (CFPreferencesCopyValue(key as CFString, kCFPreferencesAnyApplication,

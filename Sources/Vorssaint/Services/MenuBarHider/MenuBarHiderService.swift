@@ -153,6 +153,20 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
         if resume { resumeAfterOrganizerOperation() }
     }
 
+    var organizerDisplayState: MenuBarHiderSupport.DisplayState {
+        isCollapsed ? .collapsed : (isShowingAll ? .showAll : .expanded)
+    }
+
+    func restoreAfterOrganizerActivation(_ state: MenuBarHiderSupport.DisplayState) {
+        endOrganizerOperation(resume: false)
+        guard isEnabled, !isConfiguring else { return }
+        switch state {
+        case .collapsed: collapse()
+        case .expanded: expand()
+        case .showAll: showAll()
+        }
+    }
+
     func resetSeparatorPositions() {
         guard isEnabled, !organizerHoldsExpansion else { return }
         teardown()

@@ -55,6 +55,7 @@ final class MenuBarOrganizerService: ObservableObject {
     }
 
     func syncWithPreferences() {
+        canRestoreSpacing = MenuBarGlobalSpacing.hasSavedValues
         appearance.sync(enabled: enabled)
         guard advancedRequested, MenuBarOrganizerPolicy.supportsAdvancedBackend,
               AXIsProcessTrusted(), MenuBarOrganizerPolicy.conflictingManagers().isEmpty else {
@@ -246,7 +247,7 @@ final class MenuBarOrganizerService: ObservableObject {
         run { [weak self] expected in
             guard let self else { return }
             panel?.close()
-            let wasCollapsed = hider.isCollapsed
+            let previousDisplayState = hider.organizerDisplayState
             hider.showAll(startTimer: false)
             try await Task.sleep(for: .milliseconds(180))
             guard await snapshot(expected: expected) != nil else { throw MenuBarItemMoveError.itemUnavailable }
@@ -276,9 +277,7 @@ final class MenuBarOrganizerService: ObservableObject {
             if moved {
                 try await relocate(id: id, before: neighbor, to: original.section, expected: expected)
             }
-            hider.endOrganizerOperation(resume: false)
-            if wasCollapsed && !hider.isConfiguring { hider.collapse() }
-            else { hider.resumeAfterOrganizerOperation() }
+            hider.restoreAfterOrganizerActivation(previousDisplayState)
         }
     }
 

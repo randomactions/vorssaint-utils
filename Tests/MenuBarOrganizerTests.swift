@@ -114,6 +114,23 @@ enum MenuBarOrganizerTests {
         suite.expect(!MenuBarGlobalSpacing.restore(defaults: defaults, read: { current }, write: failingWrite)
                      && current == applied && defaults.data(forKey: MenuBarGlobalSpacing.restoreKey) != nil,
                      "failed Restore retains the snapshot and rolls back partial writes")
+        failedOnce = false
+        suite.expect(!MenuBarGlobalSpacing.restoreForRemoval(defaults: defaults, read: { current }, write: failingWrite)
+                     && current == applied && defaults.data(forKey: MenuBarGlobalSpacing.restoreKey) != nil,
+                     "uninstall restoration failure keeps recovery and rolls back partially written global values")
+        suite.expect(MenuBarGlobalSpacing.restoreForRemoval(defaults: defaults, read: { current }, write: write)
+                     && current == initial && defaults.object(forKey: MenuBarGlobalSpacing.restoreKey) == nil,
+                     "uninstall restores custom and absent original values before clearing recovery")
+        writes = []
+        suite.expect(MenuBarGlobalSpacing.restoreForRemoval(defaults: defaults, read: { current }, write: write)
+                     && writes.isEmpty, "uninstall with no spacing transaction never changes global preferences")
+        for malformed: Any in [Data("broken".utf8), "not data", 42] {
+            defaults.set(malformed, forKey: MenuBarGlobalSpacing.restoreKey)
+            suite.expect(!MenuBarGlobalSpacing.restoreForRemoval(defaults: defaults, read: { current }, write: write)
+                         && defaults.object(forKey: MenuBarGlobalSpacing.restoreKey) != nil && writes.isEmpty,
+                         "malformed recovery stops uninstall without clearing evidence or guessing global values")
+        }
+        defaults.removeObject(forKey: MenuBarGlobalSpacing.restoreKey)
         suite.expect(!SettingsBackupSupport.exportKeys().contains(MenuBarGlobalSpacing.restoreKey),
                      "another Mac's global spacing transaction is never imported")
         for key in [DefaultsKey.menuBarOrganizerAdvanced, DefaultsKey.menuBarOrganizerSpacing,
