@@ -460,6 +460,8 @@ def main():
                         "    func removeApplicationState("])
           + "}\n}\n")
     dock = "Sources/Vorssaint/Services/DockPreview/DockPreviewService.swift"
+    write("WindowEnhancementAction.swift", "import Foundation\n" + declaration(
+        "Sources/Vorssaint/Services/DockPreview/WindowEnhancementActions.swift", "enum WindowEnhancementAction:"))
     write("DockPreviewScroll.swift", "import AppKit\nimport SwiftUI\n"
           + "extension DockPreviewScrollTests {\n"
           + declaration("Sources/Vorssaint/UI/Switcher/DockPreviewPanelView.swift",
@@ -490,7 +492,7 @@ def main():
     write("PreviewCapturePause.swift", "import Foundation\n"
           + "extension SwitcherModelFeatureTests.PreviewProvider {\n"
           + declaration("Sources/Vorssaint/Services/Switcher/WindowPreviewProvider.swift",
-                        "    private static func captureIsPaused(").replace("private static", "static", 1)
+                        "    static func captureIsPaused(").replace("private static", "static", 1)
           + "}\n")
     write("DockAutohideInput.swift", "import CoreGraphics\nimport Foundation\nextension DockAutohideHoldTests.Service {\n"
           + "".join(declaration(dock, prefix, scope="final class DockPreviewService:")
@@ -1383,7 +1385,9 @@ def main():
           + "var artistCache: [String: (identity: NotchLyricsSupport.ArtistIdentity?, failed: Bool, expires: Date)] = [:]\n"
           + "var aliasWork: DispatchWorkItem?\nvar lastAliasRequest: TimeInterval = 0\n"
           + "var session: Session?\nvar importPanel: Panel?\nvar loads: [NotchMusicIdentity] = []\n"
+          + "var dockOwned = false\nweak var dockPresentationWindow: NSWindow?\n"
           + "func load(_ track: NotchMusicIdentity) { loads.append(track); state = .loading; session = Session() }\n"
+          + "var enabled: Bool { NotchLyricsSupport.isEnabled() }\nvar onlineEnabled: Bool { NotchLyricsSupport.onlineEnabled() }\n"
           + declaration(lyrics, "    func update(playback:")
           + declaration(lyrics, "    func playbackChanged(")
           + declaration(lyrics, "    func hide()")
@@ -1401,6 +1405,7 @@ def main():
           + "var artistCache: [String: (identity: NotchLyricsSupport.ArtistIdentity?, failed: Bool, expires: Date)] = [:]\n"
           + "var aliasWork: DispatchWorkItem?\nvar lastAliasRequest: TimeInterval = 0\n"
           + "var session: Session?\nvar importPanel: Panel?\n"
+          + "var enabled: Bool { NotchLyricsSupport.isEnabled() }\nvar onlineEnabled: Bool { NotchLyricsSupport.onlineEnabled() }\n"
           + declaration(lyrics, "    func update(playback:")
           + declaration(lyrics, "    func playbackChanged(")
           + declaration(lyrics, "    func retry()")
@@ -1440,8 +1445,10 @@ def main():
           + "var launchedAt: TimeInterval?\nvar uptime: TimeInterval = 0\nvar trackChange = NotchTrackChange()\n"
           + "func launch() { guard wantsPlayback, process == nil else { return }; launches += 1; process = Process(); input = Pipe(); commandWriter.start(); launchedAt = uptime; restoreSource() }\n"
           + "func disconnect() { endPlaybackGap(); generation = UUID(); commandWriter.stop(); process = nil; input = nil; playback = nil }\n"
-          + declaration(music, "    func start()")
-          + declaration(music, "    func stop()")
+          + "var consumers = NotchMusicConsumers()\n"
+          + declaration(music, "    func start(consumer:")
+          + declaration(music, "    func stop(consumer:")
+          + declaration(music, "    private func resetPlayback()")
           + declaration(music, "    private func connectionEnded()").replace("private func", "func", 1)
             .replace("ProcessInfo.processInfo.systemUptime", "uptime")
           + declaration(music, "    private func restoreSource()").replace("private func", "func", 1)

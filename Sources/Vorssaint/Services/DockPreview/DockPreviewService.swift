@@ -28,10 +28,13 @@ final class DockPreviewService: ObservableObject {
     @Published private(set) var isPinned = false
     /// Which edge the Dock is on, so the panel can run its cards along it.
     @Published private(set) var orientation: DockPreviewOrientation = .bottom
+    private var externalSession = false
     private var isDraggingWindow = false
 
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private let livePreviews = LiveWindowPreviews()
+    private let hoverPreview = DockHoverPreview()
     private var settingsTimer: Timer?
     private let dockAutohideHold = DockAutohideHold()
     private var dockFrameRestoration: DockPreviewFrameRestoration?
@@ -99,7 +102,7 @@ final class DockPreviewService: ObservableObject {
         let availability = DockPreviewSupport.availability(
             enabled: enabled,
             hasAccessibility: Permissions.shared.accessibility,
-            hasScreenRecording: Permissions.shared.screenRecording,
+            hasScreenRecording: true,
             preferences: cachedPreferences
         )
         blockedReason = availability.blockedReason
@@ -162,6 +165,7 @@ final class DockPreviewService: ObservableObject {
         guard isVisible, windows.contains(item) else { return }
         cancelPendingHide()
         selectedWindowID = item.windowID
+        hoverPreview.begin(item) { [weak self] in self?.commit(item) }
     }
 
     /// Whether a preview panel (session or pinned) covers the given top-left-
@@ -193,6 +197,7 @@ final class DockPreviewService: ObservableObject {
     }
 
     func endPreview(_ item: SwitcherItem) {
+        hoverPreview.end()
         guard isVisible else { return }
         guard selectedWindowID == item.windowID else { return }
         selectedWindowID = nil
@@ -213,7 +218,10 @@ final class DockPreviewService: ObservableObject {
             handoffSourcePID: NSWorkspace.shared.frontmostApplication?.processIdentifier
         )
         restoreFrame?()
+        WindowEnhancementActions.movePointer(after: item)
     }
+
+    func hideAllPreviews() { endSession(); closeAllPinnedPanels() }
 
     func closePreviewPanel() {
         guard isVisible else { return }
@@ -356,6 +364,11 @@ final class DockPreviewService: ObservableObject {
               let next = windows.first(where: { $0.windowID == nextWindowID })
         else { return }
         preview(next)
+    }
+
+    func cancelWindowDrag() {
+        isDraggingWindow = false
+        DockPreviewDragGhost.shared.end()
     }
 
     // MARK: - Event tap
@@ -507,7 +520,8 @@ final class DockPreviewService: ObservableObject {
         // A drag owns the pointer until it lifts. Without this the pointer
         // leaving the panel would arm the hide, and passing over another Dock
         // icon would swap the panel out from under the window being carried.
-        guard !isDraggingWindow else { return }
+        guard !isDraggingWindow, !externalSession else { return }
+        if DockOption.trigger.string != "hover", !isVisible { return }
         lastAXMousePoint = axPoint
         let point = appKitPoint(fromAX: axPoint)
         lastAppKitMousePoint = point
@@ -705,11 +719,11 @@ final class DockPreviewService: ObservableObject {
     }
 
     private static func previewableWindows(for pid: pid_t) -> [SwitcherItem] {
-        let windows = WindowEnumerator.listWindowsForDockPreview(for: pid, maximumCount: 12)
+        let windows = DockWindowOrdering.windows(for: pid)
             .filter { $0.windowID != nil }
         let order = DockPreviewWindowOrder.fromDefaults(
             orderByCreation: UserDefaults.standard.bool(forKey: DefaultsKey.dockPreviewOrderByCreation))
-        return DockPreviewSupport.orderedWindows(windows, order: order)
+        return DockOption.sortOrder.string == "recent" ? DockPreviewSupport.orderedWindows(windows, order: order) : windows
     }
 
     private func beginHoverIfStillValid(token: UUID, initialHit: DockHit) {
@@ -724,7 +738,18 @@ final class DockPreviewService: ObservableObject {
         beginSession(hit)
     }
 
-    private func beginSession(_ hit: DockHit) {
+    func show(for app: NSRunningApplication, anchor: CGRect, external: Bool = false) {
+        guard isRunning, let original = cachedPreferences else { return }
+        let preferences = external ? DockPreviewPreferences(orientation: .bottom, autohide: false,
+            tileSize: original.tileSize, magnification: false, magnifiedTileSize: original.magnifiedTileSize) : original
+        beginSession(DockHit(app: app, iconFrame: anchor, preferences: preferences), external: external)
+        externalSession = external
+    }
+
+
+    private func beginSession(_ hit: DockHit, external: Bool = false) {
+        if !external, (DockOption.calendarWidget.bool && hit.app.bundleIdentifier == "com.apple.iCal")
+            || (DockOption.mediaWidget.bool && DockWidgetService.shared.isMediaApp(hit.app.processIdentifier)) { return }
         guard !(isPinned && isVisible) else { return }
         // A prefetched list counts only for the app it was taken for: a hover
         // handed over to a neighbouring icon must not open on the previous
@@ -761,21 +786,31 @@ final class DockPreviewService: ObservableObject {
         })
         selectedWindowID = nil
 
+        if !DockPreviewLayout.compact(list.count) {
         WindowPreviewProvider.shared.refreshPreviews(for: list, maxPixelSize: 420 * PreviewSizing.scale,
                                                      excludedAppsKey: DefaultsKey.windowPreviewExcludedApps) { [weak self] windowID, image in
             guard let self, self.isVisible, self.windows.contains(where: { $0.previewWindowID == windowID }) else { return }
             self.previews[windowID] = image
         }
 
+        }
         if hit.preferences.autohide,
            UserDefaults.standard.bool(forKey: DefaultsKey.dockPreviewKeepDockVisible) {
             beginDockAutohideHold()
+        }
+        if DockOption.livePreviews.bool, !DockPreviewLayout.compact(list.count) {
+            livePreviews.start(list, excludedAppsKey: DefaultsKey.windowPreviewExcludedApps) { [weak self] id, image in
+                guard let self, self.isVisible else { return }; self.previews[id] = image
+            }
         }
         showPanel(for: hit, itemCount: list.count)
     }
 
     /// Fully ends the session and tears down the panel.
     private func endSession() {
+        externalSession = false
+        livePreviews.stop()
+        hoverPreview.end()
         isDraggingWindow = false
         DockPreviewDragGhost.shared.end()
         cancelPendingHover()
@@ -929,7 +964,7 @@ final class DockPreviewService: ObservableObject {
     private func showPanel(for hit: DockHit, itemCount: Int) {
         let panel = ensurePanel()
         let screenVisibleFrame = visibleFrameForScreen(containing: hit.iconFrame)
-        let size = DockPreviewSupport.panelSize(itemCount: itemCount,
+        let size = DockPreviewLayout.panelSize(itemCount: itemCount,
                                                 screenVisibleFrame: screenVisibleFrame,
                                                 isPinned: false,
                                                 orientation: hit.preferences.orientation)
@@ -963,7 +998,7 @@ final class DockPreviewService: ObservableObject {
         else { return }
 
         let screenVisibleFrame = visibleFrameForScreen(containing: iconFrame)
-        let size = DockPreviewSupport.panelSize(itemCount: windows.count,
+        let size = DockPreviewLayout.panelSize(itemCount: windows.count,
                                                 screenVisibleFrame: screenVisibleFrame,
                                                 isPinned: false,
                                                 orientation: preferences.orientation)
@@ -1212,27 +1247,10 @@ final class DockPreviewService: ObservableObject {
     }
 
     private func runningApplication(forDockElement element: AXUIElement) -> NSRunningApplication? {
-        let running = NSWorkspace.shared.runningApplications.filter {
-            $0.activationPolicy == .regular && !$0.isTerminated
-        }
-
-        if let url = urlAttribute(element) {
-            let standardized = url.standardizedFileURL.path
-            if let app = running.first(where: { $0.bundleURL?.standardizedFileURL.path == standardized }) {
-                return app
-            }
-        }
-
-        let labels = labelCandidates(from: element)
-        guard !labels.isEmpty else { return nil }
-        return running.first { app in
-            let names = [
-                app.localizedName,
-                app.bundleURL?.deletingPathExtension().lastPathComponent,
-                app.bundleURL?.lastPathComponent.replacingOccurrences(of: ".app", with: ""),
-            ].compactMap { $0 }.map(normalizeLabel)
-            return labels.contains { label in names.contains(normalizeLabel(label)) }
-        }
+        guard let frame = appKitFrame(of: element) else { return nil }
+        let title = labelCandidates(from: element).first ?? ""
+        let item = DockAccessibility.Item(element: element, url: urlAttribute(element), title: title, frame: frame, subrole: "AXApplicationDockItem")
+        return DockAccessibility.application(for: item)
     }
 
     private func labelCandidates(from element: AXUIElement) -> [String] {
@@ -1490,6 +1508,8 @@ final class DockPreviewPinnedPanel: ObservableObject, Identifiable {
     private let appPID: pid_t
     private let onClose: (UUID) -> Void
     private let previewProvider = WindowPreviewProvider()
+    private let livePreviews = LiveWindowPreviews()
+    private let hoverPreview = DockHoverPreview()
     private var refreshTimer: Timer?
     private var pendingMinimizeConfirmations: [CGWindowID: UUID] = [:]
 
@@ -1506,6 +1526,7 @@ final class DockPreviewPinnedPanel: ObservableObject, Identifiable {
         self.currentAppName = currentAppName
         self.onClose = onClose
         startRefreshTimer()
+        refreshMissingPreviews(for: windows, windowIDsChanged: true, missingPreview: true)
     }
 
     deinit {
@@ -1517,10 +1538,12 @@ final class DockPreviewPinnedPanel: ObservableObject, Identifiable {
     func preview(_ item: SwitcherItem) {
         guard windows.contains(item) else { return }
         selectedWindowID = item.windowID
+        hoverPreview.begin(item) { [weak self] in self?.commit(item) }
     }
 
     func endPreview(_ item: SwitcherItem) {
         guard selectedWindowID == item.windowID else { return }
+        hoverPreview.end()
     }
 
     func commit(_ item: SwitcherItem) {
@@ -1584,6 +1607,8 @@ final class DockPreviewPinnedPanel: ObservableObject, Identifiable {
     }
 
     func closePreviewPanel() {
+        hoverPreview.end()
+        livePreviews.stop()
         refreshTimer?.invalidate()
         pendingMinimizeConfirmations.removeAll()
         previewProvider.cancel()
@@ -1669,12 +1694,9 @@ final class DockPreviewPinnedPanel: ObservableObject, Identifiable {
 
     private func refreshWindows() {
         let previousIDs = windows.compactMap(\.windowID)
-        let refreshed = DockPreviewSupport.orderedWindows(
-            WindowEnumerator.listWindowsForDockPreview(for: appPID, maximumCount: Self.maximumWindowCount)
-                .filter { $0.windowID != nil },
-            order: DockPreviewWindowOrder.fromDefaults(
-                orderByCreation: UserDefaults.standard.bool(
-                    forKey: DefaultsKey.dockPreviewOrderByCreation)))
+        let listed = DockWindowOrdering.windows(for: appPID).filter { $0.windowID != nil }
+        let refreshed = DockOption.sortOrder.string == "recent" ? DockPreviewSupport.orderedWindows(listed,
+            order: DockPreviewWindowOrder.fromDefaults(orderByCreation: UserDefaults.standard.bool(forKey: DefaultsKey.dockPreviewOrderByCreation))) : listed
         guard !refreshed.isEmpty else {
             closePreviewPanel()
             return
@@ -1716,6 +1738,11 @@ final class DockPreviewPinnedPanel: ObservableObject, Identifiable {
     private func refreshMissingPreviews(for items: [SwitcherItem],
                                         windowIDsChanged: Bool,
                                         missingPreview: Bool) {
+        if DockPreviewLayout.compact(items.count) { livePreviews.stop(); previews = [:]; return }
+        if !DockOption.livePreviews.bool { livePreviews.stop() }
+        if DockOption.livePreviews.bool, windowIDsChanged {
+            livePreviews.start(items, excludedAppsKey: DefaultsKey.windowPreviewExcludedApps) { [weak self] id, image in self?.previews[id] = image }
+        }
         guard windowIDsChanged || missingPreview else { return }
 
         previewProvider.refreshPreviews(for: items, maxPixelSize: 420 * PreviewSizing.scale,
@@ -1751,7 +1778,7 @@ final class DockPreviewPinnedPanel: ObservableObject, Identifiable {
 
     private func resizePanel() {
         guard let panel else { return }
-        let size = DockPreviewSupport.panelSize(itemCount: windows.count,
+        let size = DockPreviewLayout.panelSize(itemCount: windows.count,
                                                 screenVisibleFrame: visibleFrameForScreen(containing: panel.frame),
                                                 isPinned: true)
         var frame = panel.frame

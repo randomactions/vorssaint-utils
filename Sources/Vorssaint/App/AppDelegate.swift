@@ -311,6 +311,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             MouseAccelerationService.shared.stop()
         }
         MouseNavigationService.shared.suspend()
+        DockAdditionsRuntime.shared.stop()
         DockPreviewService.shared.stop()
         SoundOutputSwitcher.shared.stop()
         PreciseVolumeRollerService.shared.stop()
