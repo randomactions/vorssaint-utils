@@ -12,6 +12,8 @@ struct MenuBarOrganizerEditor: View {
     @AppStorage(DefaultsKey.menuBarHiderEnabled) private var hiderEnabled = false
     @State private var pageVisible = false
     @State private var query = ""
+    @State private var hoveredItem: MenuBarItemIdentity?
+    @State private var targetedSection: MenuBarOrganizerSection?
     private var text: MenuBarOrganizerStrings { FeatureStrings.menuBarOrganizer(l10n.language) }
     private var labels: MenuBarEditorStrings { FeatureStrings.menuBarEditor(l10n.language) }
     private var hiderText: MenuBarHiderStrings { FeatureStrings.menuBarHider(l10n.language) }
@@ -37,7 +39,7 @@ struct MenuBarOrganizerEditor: View {
                 Button(text.refresh) { service.refresh() }.disabled(!service.isRunning || service.isBusy)
                 Button(text.undo) { service.undoLastMove() }.disabled(!canArrange || !service.canUndo)
             }
-            VStack(spacing: 12) {
+            VStack(spacing: 16) {
                 ForEach(MenuBarOrganizerSection.allCases) { section in
                     category(section)
                 }
@@ -77,49 +79,66 @@ struct MenuBarOrganizerEditor: View {
     private func category(_ section: MenuBarOrganizerSection) -> some View {
         let items = MenuBarOrganizerSupport.orderedItems(service.items, in: section)
         let matches = items.filter { MenuBarOrganizerPolicy.searchScore(query: query, name: $0.displayName) != nil }
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
                 Text(title(section)).font(.subheadline.weight(.semibold))
                 Text(items.count, format: .number).font(.caption).foregroundStyle(.secondary)
                 Spacer(minLength: 4)
                 Text(caption(section)).font(.caption).foregroundStyle(.secondary)
             }
-            ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: 8) {
-                    ForEach(matches) { item in itemCell(item, section: section) }
-                    Text(matches.isEmpty && !query.isEmpty ? text.empty : labels.drop)
-                        .font(.caption).foregroundStyle(.secondary)
-                        .frame(width: matches.isEmpty ? 240 : 96, height: 64)
+            GeometryReader { geometry in
+                ScrollView(.horizontal) {
+                    HStack(spacing: 2) {
+                        if matches.isEmpty {
+                            Text(query.isEmpty ? labels.drop : text.empty)
+                                .font(.caption).foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity)
+                        } else {
+                            ForEach(matches) { item in itemCell(item, section: section) }
+                            // A trailing landing area also permits appending after the last icon.
+                            Color.clear.frame(width: 20, height: 32)
+                        }
+                    }
+                    .frame(minWidth: max(0, geometry.size.width - 12), minHeight: 40, alignment: .leading)
+                    .padding(.horizontal, 6)
                 }
-                .padding(.vertical, 4)
             }
-            .frame(height: 84)
-
+            .frame(height: 44)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(targetedSection == section ? Color.accentColor : Color.primary.opacity(0.14),
+                                  lineWidth: targetedSection == section ? 2 : 1)
+            }
+            .contentShape(Rectangle())
+            .dropDestination(for: String.self) { values, _ in
+                drop(values, before: nil, section: section)
+            } isTargeted: { targeted in
+                if targeted { targetedSection = section }
+                else if targetedSection == section { targetedSection = nil }
+            }
         }
-        .padding(12)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(0.1)))
-        .contentShape(Rectangle())
-        .dropDestination(for: String.self) { values, _ in drop(values, before: nil, section: section) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(title(section))
     }
 
     @ViewBuilder private func itemCell(_ item: ManagedMenuBarItem, section: MenuBarOrganizerSection) -> some View {
-        let tile = VStack(spacing: 5) {
-            MenuBarItemThumbnail(item: item).frame(width: 24, height: 24)
+        let tile = MenuBarItemThumbnail(item: item).frame(width: 18, height: 18)
                 .overlay(alignment: .bottomTrailing) {
                     if !item.isMovable {
-                        Image(systemName: "lock.fill").font(.system(size: 8))
-                            .padding(2).background(.background, in: Circle())
+                        Image(systemName: "lock.fill").font(.system(size: 6))
+                            .padding(1).background(.background, in: Circle())
                     }
                 }
-            Text(item.displayName).font(.caption2).lineLimit(2).multilineTextAlignment(.center)
+        .frame(width: 32, height: 32)
+        .background(hoveredItem == item.id ? Color.primary.opacity(0.1) : .clear,
+                    in: RoundedRectangle(cornerRadius: 4))
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            if hovering { hoveredItem = item.id }
+            else if hoveredItem == item.id { hoveredItem = nil }
         }
-        .frame(width: 68, height: 64)
-        .padding(4)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.65), in: RoundedRectangle(cornerRadius: 7))
         .help(item.isMovable ? item.displayName : "\(item.displayName) — \(labels.locked)")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(item.displayName)
