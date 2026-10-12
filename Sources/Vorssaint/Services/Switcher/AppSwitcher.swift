@@ -1018,10 +1018,6 @@ final class AppSwitcher: ObservableObject {
                 pendingGeneration: routePendingSessionStart?.generation
             )
         }) else { return }
-        guard !windows.isEmpty else {
-            discardPendingSessionStart(generation: generation)
-            return
-        }
         // The foreground window is what a session is measured against, and it
         // does not always exist: an app left with no windows, or with all of
         // them minimized or on another Space, still owns the keyboard. The
@@ -1031,13 +1027,17 @@ final class AppSwitcher: ObservableObject {
         let source = SwitcherSupport.sessionSourceItem(frontmostPID: reportedFrontPID,
                                                        focusedWindowID: focusedSourceWindowID,
                                                        items: sourceItems)
+        let list = DockWindowOrdering.sessionItems(windows, currentID: source?.id)
+        guard !list.isEmpty else {
+            discardPendingSessionStart(generation: generation)
+            return
+        }
         // Keep the original source for activation, but start at the first
         // entry if display filtering removes the foreground window.
         let listedSource = source.flatMap { item in
-            windows.contains { $0.id == item.id } ? item : nil
+            list.contains { $0.id == item.id } ? item : nil
         }
 
-        let list = DockWindowOrdering.ordered(SwitcherSupport.orderedForSession(windows, currentID: listedSource?.id))
         guard let pending = routeLock.withLock({ () -> SwitcherPendingSessionStart? in
             guard SwitcherSupport.isCurrentSessionStart(
                 generation: generation,

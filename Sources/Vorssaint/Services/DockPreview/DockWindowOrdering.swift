@@ -4,6 +4,9 @@
 import AppKit
 
 enum DockWindowOrdering {
+    static func sessionItems(_ items: [SwitcherItem], currentID: String?) -> [SwitcherItem] {
+        SwitcherSupport.orderedForSession(ordered(items), currentID: currentID)
+    }
     static func ordered(_ items: [SwitcherItem]) -> [SwitcherItem] {
         let filtered = items.filter { !DockEnhancementSupport.titleIsExcluded($0.title, filters: DockOption.windowTitleFilters.string) }
         switch DockOption.sortOrder.string {

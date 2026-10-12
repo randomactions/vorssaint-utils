@@ -4,6 +4,30 @@
 import Foundation
 import CoreGraphics
 
+/// Lock the gesture to its first dominant axis, so card actions coexist with
+/// scrolling through overflowing windows. Momentum is handled by the reader.
+struct PreviewSwipeGesture {
+    enum Result { case passThrough, consume, maximize, minimize }
+    private var perpendicular: Bool?
+    private var travel: CGFloat = 0
+    private var spent = false
+    mutating func reset() { self = PreviewSwipeGesture() }
+    mutating func sample(x: CGFloat, y: CGFloat, orientation: DockPreviewOrientation) -> Result {
+        let actionDelta = orientation == .bottom ? y : x
+        let scrollDelta = orientation == .bottom ? x : y
+        if perpendicular == nil {
+            guard abs(actionDelta) + abs(scrollDelta) > 0 else { return .passThrough }
+            perpendicular = abs(actionDelta) > abs(scrollDelta)
+        }
+        guard perpendicular == true else { return .passThrough }
+        travel += actionDelta
+        guard abs(travel) > 50, !spent else { return .consume }
+        spent = true
+        let away = orientation == .left ? travel < 0 : travel > 0
+        return away ? .maximize : .minimize
+    }
+}
+
 /// Additions are opt-in. Registry membership also makes each portable choice
 /// available to Settings Backup; display identifiers are excluded separately.
 enum DockOption: String, CaseIterable {

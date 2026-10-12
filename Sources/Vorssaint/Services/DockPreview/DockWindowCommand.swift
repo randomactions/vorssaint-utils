@@ -58,9 +58,9 @@ final class DockWindowCommand: NSScriptCommand {
             guard let id = DockScriptSupport.identifier(arguments["pid"]), id <= UInt32(Int32.max),
                   let app = NSRunningApplication(processIdentifier: pid_t(id)), !app.isTerminated, app.activationPolicy == .regular, id != UInt32(getpid()),
                   let screen = NSScreen.main else { throw failure(-1728, "The requested app is not running.") }
-            let anchor = DockAccessibility.items().first(where: { DockAccessibility.application(for: $0)?.processIdentifier == app.processIdentifier })?.frame
-                ?? CGRect(x: screen.visibleFrame.midX - 20, y: screen.visibleFrame.minY + 20, width: 40, height: 40)
-            DockPreviewService.shared.show(for: app, anchor: anchor, external: true)
+            let dockAnchor = DockAccessibility.items().first(where: { DockAccessibility.application(for: $0)?.processIdentifier == app.processIdentifier })?.frame
+            let anchor = dockAnchor ?? CGRect(x: screen.visibleFrame.midX - 20, y: screen.visibleFrame.minY + 20, width: 40, height: 40)
+            DockPreviewService.shared.show(for: app, anchor: anchor, external: true, centeredPlacement: dockAnchor == nil)
         default:
             guard let id = DockScriptSupport.identifier(arguments["id"]), let item = windows().first(where: { $0.windowID == id }) else { throw failure(-1728, "The requested window no longer exists.") }
             if command == "window" { return ["window": record(item)] }

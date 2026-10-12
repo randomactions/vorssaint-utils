@@ -42,7 +42,7 @@ final class CmdTabPreviewService {
                     title: DockAccessibility.attribute(target, kAXTitleAttribute) ?? "", frame: DockAccessibility.appKit(rect), subrole: "")
                 guard let app = DockAccessibility.application(for: item), app.processIdentifier != appPID else { return }
                 appPID = app.processIdentifier; showing = true
-                DockPreviewService.shared.show(for: app, anchor: item.frame, external: true)
+                DockPreviewService.shared.show(for: app, anchor: item.frame, external: true, centeredPlacement: true)
                 return
             }
             if depth < 6 {

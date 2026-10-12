@@ -171,7 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             .sink { _ in
                 FeatureRuntime.shared.sync([
                     .scrollInverter, .scrollHorizontal, .focusFollowsMouse, .smoothScroll, .linearScroll, .mouseNavigation, .switcher,
-                    .dockPreview, .finderCutPaste, .finderRename, .autoQuit, .dockClick,
+                    .dockPreview, .dockIndicator, .dockLock, .finderCutPaste, .finderRename, .autoQuit, .dockClick,
                     .middleClick, .windowMaximizer, .keyboardDebounce, .windowLayout,
                     .textSnippets, .brightness, .radialMenu, .mouseButtonShortcuts,
                     .mouseClickDebounce, .superKey, .quitWindowProtection, .mixer, .musicBlock, .notch,
@@ -183,7 +183,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { _ in
-                FeatureRuntime.shared.sync([.dockPreview, .screenRecorder])
+                FeatureRuntime.shared.sync([.dockPreview, .switcher, .screenRecorder])
             }
             .store(in: &cancellables)
 

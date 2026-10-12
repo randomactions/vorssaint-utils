@@ -178,6 +178,10 @@ final class DockPreviewService: ObservableObject {
         if isVisible, activePanelFrame?.contains(point) == true { return true }
         return pinnedPanelWindows.values.contains { $0.isVisible && $0.frame.contains(point) }
     }
+    var inputExclusionFrames: [CGRect] {
+        (isVisible ? activePanelFrame.map { [$0] } ?? [] : [])
+            + pinnedPanelWindows.values.filter(\.isVisible).map(\.frame)
+    }
 
     /// A Dock icon click was handled — and swallowed — by DockClickService, so
     /// the listen-only tap here never sees that mouseDown. Mirror what a native
@@ -738,9 +742,9 @@ final class DockPreviewService: ObservableObject {
         beginSession(hit)
     }
 
-    func show(for app: NSRunningApplication, anchor: CGRect, external: Bool = false) {
+    func show(for app: NSRunningApplication, anchor: CGRect, external: Bool = false, centeredPlacement: Bool = false) {
         guard isRunning, let original = cachedPreferences else { return }
-        let preferences = external ? DockPreviewPreferences(orientation: .bottom, autohide: false,
+        let preferences = centeredPlacement ? DockPreviewPreferences(orientation: .bottom, autohide: false,
             tileSize: original.tileSize, magnification: false, magnifiedTileSize: original.magnifiedTileSize) : original
         beginSession(DockHit(app: app, iconFrame: anchor, preferences: preferences), external: external)
         externalSession = external
@@ -770,6 +774,7 @@ final class DockPreviewService: ObservableObject {
 
         // Switching apps keeps the panel on screen and re-points it at the app
         // under the cursor without changing the frontmost application.
+        stopSessionWork()
         if isVisible {
             tearDownVisuals()
         }
@@ -807,15 +812,18 @@ final class DockPreviewService: ObservableObject {
     }
 
     /// Fully ends the session and tears down the panel.
-    private func endSession() {
-        externalSession = false
+    private func stopSessionWork() {
         livePreviews.stop()
         hoverPreview.end()
+        WindowPreviewProvider.shared.cancel()
+    }
+    private func endSession() {
+        externalSession = false
+        stopSessionWork()
         isDraggingWindow = false
         DockPreviewDragGhost.shared.end()
         cancelPendingHover()
         cancelPendingHide()
-        WindowPreviewProvider.shared.cancel()
         // Remove the surface before publishing empty content. During a Space
         // transition, an animated dismissal can otherwise carry a blank panel.
         panel?.orderOut(nil)
@@ -1190,6 +1198,7 @@ final class DockPreviewService: ObservableObject {
     }
 
     private func closePinnedPanel(_ id: UUID) {
+        pinnedPanels[id]?.stopOwnedWork()
         if let panel = pinnedPanelWindows.removeValue(forKey: id) {
             panel.orderOut(nil)
             panel.contentViewController = nil
@@ -1606,12 +1615,16 @@ final class DockPreviewPinnedPanel: ObservableObject, Identifiable {
                                      attempt: 0)
     }
 
-    func closePreviewPanel() {
+    func stopOwnedWork() {
         hoverPreview.end()
         livePreviews.stop()
         refreshTimer?.invalidate()
         pendingMinimizeConfirmations.removeAll()
         previewProvider.cancel()
+    }
+
+    func closePreviewPanel() {
+        stopOwnedWork()
         onClose(id)
     }
 

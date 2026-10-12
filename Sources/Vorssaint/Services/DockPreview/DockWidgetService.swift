@@ -20,6 +20,9 @@ final class DockWidgetService: ObservableObject {
     var presentationWindow: NSWindow? { panel }
     private init() {}
     func syncWithPreferences() {
+        guard AppFeature.dockPreview.isAvailable, UserDefaults.standard.bool(forKey: DefaultsKey.dockPreviewEnabled),
+              Permissions.shared.accessibility, SessionActivity.shared.isActive,
+              DockOption.folders.bool || DockOption.mediaWidget.bool || DockOption.calendarWidget.bool else { stop(); return }
         if DockOption.mediaWidget.bool {
             musicWanted = true; NotchMusicService.shared.start(consumer: .dock)
         } else if musicWanted { musicWanted = false; NotchMusicService.shared.stop(consumer: .dock) }
@@ -31,6 +34,7 @@ final class DockWidgetService: ObservableObject {
     func isMediaApp(_ pid: pid_t) -> Bool {
         musicWanted && NotchMusicService.shared.playback?.track.appPID == pid
     }
+    func panelCovers(_ point: CGPoint) -> Bool { panel?.isVisible == true && panel?.frame.contains(point) == true }
     private func allows(_ kind: Kind) -> Bool {
         switch kind { case .folder: return DockOption.folders.bool; case .music: return DockOption.mediaWidget.bool; case .calendar: return DockOption.calendarWidget.bool }
     }

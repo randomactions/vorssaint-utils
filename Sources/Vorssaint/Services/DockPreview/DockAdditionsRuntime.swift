@@ -52,15 +52,16 @@ final class DockAdditionsRuntime {
         run("trackpad", wanted: switcher && DockOption.trackpadSwitcher.bool,
             start: { TrackpadWindowSwitcher.shared.start() }, stop: { TrackpadWindowSwitcher.shared.stop() })
         // Permission changes must also cancel streams on existing surfaces.
-        if loaded.contains("dockSurface") && !dock { DockPreviewService.shared.hideAllPreviews() }
+        if !dock, loaded.remove("dockSurface") != nil { DockPreviewService.shared.hideAllPreviews() }
         if dock { loaded.insert("dockSurface") }
     }
     private func run(_ id: String, wanted: Bool, start: () -> Void, stop: () -> Void) {
         if wanted { loaded.insert(id); start() }
-        else if loaded.contains(id) { stop() }
+        else if loaded.remove(id) != nil { stop() }
     }
     func dismissWidget() { if loaded.contains("widgets") { DockWidgetService.shared.dismiss() } }
     func stop() {
+        pending?.cancel(); pending = nil
         if loaded.contains("indicator") { DockIndicatorService.shared.stop() }
         if loaded.contains("lock") { DockLockService.shared.stop() }
         if loaded.contains("widgets") { DockWidgetService.shared.stop() }
@@ -68,5 +69,7 @@ final class DockAdditionsRuntime {
         if loaded.contains("cmdtab") { CmdTabPreviewService.shared.stop() }
         if loaded.contains("trackpad") { TrackpadWindowSwitcher.shared.stop() }
         if loaded.contains("dockSurface") { DockPreviewService.shared.hideAllPreviews() }
+        loaded.removeAll()
+        captureSettings = nil
     }
 }

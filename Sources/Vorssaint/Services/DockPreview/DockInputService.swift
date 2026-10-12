@@ -15,6 +15,10 @@ final class DockInputService {
         var quickQuit = false, scroll = false, titleScroll = false
         var trigger = "hover", modifier: CGEventFlags = .maskAlternate
         var top: CGFloat = 0
+        var dockPID: pid_t?
+        var windows: [MouseAppExceptionSupport.Window] = []
+        var exclusionFrames: [CGRect] = []
+        var sampledAt: TimeInterval = 0
     }
     private var snapshot = Snapshot()
     private lazy var inputTap = WindowInputTap(mask: [CGEventType.rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp, .leftMouseDown, .leftMouseUp, .scrollWheel].reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }) { [weak self] type, event in
@@ -38,7 +42,15 @@ final class DockInputService {
     }
     private func refresh() {
         defer {
-            let value = Snapshot(tiles: tiles, titleBar: titleBar, quickQuit: quickQuit, scroll: scroll, titleScroll: titleScroll, trigger: trigger, modifier: modifier, top: NSScreen.screens.first?.frame.maxY ?? 0)
+            var value = Snapshot(tiles: tiles, titleBar: titleBar, quickQuit: quickQuit, scroll: scroll, titleScroll: titleScroll, trigger: trigger, modifier: modifier, top: NSScreen.screens.first?.frame.maxY ?? 0)
+            if !tiles.isEmpty {
+                value.dockPID = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first?.processIdentifier
+                value.windows = WindowServerSupport.onScreenWindows()
+                value.exclusionFrames = NSApp.windows.filter { $0.isVisible && !$0.ignoresMouseEvents }.map(\.frame)
+                    + DockPreviewService.shared.inputExclusionFrames
+                if let panel = DockWidgetService.shared.presentationWindow, panel.isVisible { value.exclusionFrames.append(panel.frame) }
+            }
+            value.sampledAt = ProcessInfo.processInfo.systemUptime
             stateLock.withLock { snapshot = value }
         }
         quickQuit = DockOption.quickQuit.bool; scroll = DockOption.dockScroll.bool
@@ -82,17 +94,23 @@ final class DockInputService {
         }
         let cached = stateLock.withLock { snapshot }
         let point = CGPoint(x: event.location.x, y: cached.top - event.location.y)
+        let dockOwnsPoint = cached.dockPID.map { pid in
+            !cached.exclusionFrames.contains { $0.contains(point) }
+                && DockClickSupport.dockOwnsPoint(event.location, windows: cached.windows,
+                    dockProcessID: pid, dockLayer: Int(CGWindowLevelForKey(.dockWindow)),
+                    ownProcessID: getpid(), accessibilityHitProcessID: { nil })
+        } ?? false
         if type == .scrollWheel {
             guard event.getIntegerValueField(.scrollWheelEventMomentumPhase) == 0 else { return Unmanaged.passUnretained(event) }
             let delta = event.getDoubleValueField(.scrollWheelEventDeltaAxis1)
             let horizontal = event.getDoubleValueField(.scrollWheelEventDeltaAxis2)
             guard abs(delta) + abs(horizontal) > 0 else { return Unmanaged.passUnretained(event) }
             let now = ProcessInfo.processInfo.systemUptime
-            if cached.scroll, let tile = cached.tiles.first(where: { $0.rect.contains(point) }) {
+            if dockOwnsPoint, cached.scroll, let tile = cached.tiles.first(where: { $0.rect.contains(point) }) {
                 if now - lastScroll > 0.15 {
                     lastScroll = now
                     DispatchQueue.main.async { [weak self] in
-                        guard self?.valid(tile) == true, DockOption.dockScroll.bool, let app = NSRunningApplication(processIdentifier: tile.pid) else { return }
+                        guard self?.valid(tile, at: point, sampledAt: cached.sampledAt) == true, DockOption.dockScroll.bool, let app = NSRunningApplication(processIdentifier: tile.pid) else { return }
                         if DockOption.mediaWidget.bool, DockWidgetService.shared.isMediaApp(tile.pid), let volume = AppVolumeMixer.systemOutputVolumeSnapshot() {
                             _ = AppVolumeMixer.setSystemOutputVolume(volume + (delta > 0 ? 0.04 : -0.04))
                         } else if delta > 0 { _ = app.unhide(); app.activate(options: []) }
@@ -116,12 +134,12 @@ final class DockInputService {
                 return nil
             }
         }
-        guard let tile = cached.tiles.first(where: { $0.rect.contains(point) }) else { return Unmanaged.passUnretained(event) }
+        guard dockOwnsPoint, let tile = cached.tiles.first(where: { $0.rect.contains(point) }) else { return Unmanaged.passUnretained(event) }
         if cached.quickQuit, type == .rightMouseDown, event.flags.contains(.maskCommand) {
             let force = event.flags.contains(.maskAlternate)
             swallowedButton = type
             DispatchQueue.main.async { [weak self] in
-                guard self?.valid(tile) == true, DockOption.quickQuit.bool, let app = NSRunningApplication(processIdentifier: tile.pid) else { return }
+                guard self?.valid(tile, at: point, sampledAt: cached.sampledAt) == true, DockOption.quickQuit.bool, let app = NSRunningApplication(processIdentifier: tile.pid) else { return }
                 if force { _ = app.forceTerminate() } else { _ = app.terminate() }
             }
             return nil
@@ -130,18 +148,36 @@ final class DockInputService {
             || (cached.trigger == "modifier" && type == .leftMouseDown && event.flags.contains(cached.modifier)) {
             swallowedButton = type
             DispatchQueue.main.async { [weak self] in
-                guard self?.valid(tile) == true, DockOption.trigger.string == cached.trigger, let app = NSRunningApplication(processIdentifier: tile.pid) else { return }
+                guard self?.valid(tile, at: point, sampledAt: cached.sampledAt) == true, DockOption.trigger.string == cached.trigger, let app = NSRunningApplication(processIdentifier: tile.pid) else { return }
                 DockPreviewService.shared.show(for: app, anchor: tile.rect)
             }
             return nil
         }
         return Unmanaged.passUnretained(event)
     }
-    private func valid(_ tile: Tile) -> Bool {
+    private func valid(_ tile: Tile, at point: CGPoint, sampledAt: TimeInterval) -> Bool {
         guard inputTap.isRunning, SessionActivity.shared.isActive, AppFeature.dockPreview.isAvailable,
+              AXIsProcessTrusted(), ProcessInfo.processInfo.systemUptime - sampledAt < 0.5,
               UserDefaults.standard.bool(forKey: DefaultsKey.dockPreviewEnabled),
               let app = NSRunningApplication(processIdentifier: tile.pid) else { return false }
-        return !app.isTerminated && app.bundleURL == tile.bundleURL
+        guard !app.isTerminated, app.bundleURL == tile.bundleURL,
+              !NSApp.windows.contains(where: { $0.isVisible && !$0.ignoresMouseEvents && $0.frame.contains(point) }),
+              !DockPreviewService.shared.inputExclusionFrames.contains(where: { $0.contains(point) }),
+              !DockWidgetService.shared.panelCovers(point),
+              let dockPID = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first?.processIdentifier else { return false }
+        let axPoint = DockAccessibility.quartz(point)
+        guard DockClickSupport.dockOwnsPoint(axPoint, windows: WindowServerSupport.onScreenWindows(),
+            dockProcessID: dockPID, dockLayer: Int(CGWindowLevelForKey(.dockWindow)), ownProcessID: getpid(),
+            accessibilityHitProcessID: {
+                let root = AXUIElementCreateSystemWide()
+                _ = AXUIElementSetMessagingTimeout(root, 0.04)
+                var hit: AXUIElement?, pid: pid_t = 0
+                guard AXUIElementCopyElementAtPosition(root, Float(axPoint.x), Float(axPoint.y), &hit) == .success,
+                      let hit, AXUIElementGetPid(hit, &pid) == .success else { return nil }
+                return pid
+            }), let item = DockAccessibility.items().first(where: { $0.frame.contains(point) }),
+            let fresh = DockAccessibility.application(for: item) else { return false }
+        return fresh.processIdentifier == tile.pid && fresh.bundleURL == tile.bundleURL
     }
     func stop() {
         timer?.invalidate(); timer = nil

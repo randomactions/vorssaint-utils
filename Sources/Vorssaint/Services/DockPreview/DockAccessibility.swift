@@ -40,19 +40,27 @@ enum DockAccessibility {
     }
     static func items() -> [Item] {
         guard AXIsProcessTrusted(), let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else { return [] }
-        let root = AXUIElementCreateApplication(dock.processIdentifier)
+        return items(dockPID: dock.processIdentifier, screenTop: NSScreen.screens.first?.frame.maxY ?? 0)
+    }
+    /// The caller snapshots AppKit geometry on main before dispatching IPC.
+    static func items(dockPID: pid_t, screenTop: CGFloat) -> [Item] {
+        guard AXIsProcessTrusted() else { return [] }
+        let root = AXUIElementCreateApplication(dockPID)
         AXUIElementSetMessagingTimeout(root, 0.04)
         let children: [AXUIElement] = attribute(root, kAXChildrenAttribute) ?? []
         guard let list = children.first(where: { (attribute($0, kAXRoleAttribute) as String?) == kAXListRole }) else { return [] }
         return (attribute(list, kAXChildrenAttribute) as [AXUIElement]? ?? []).prefix(160).compactMap { element in
             guard let rect = frame(element) else { return nil }
             return Item(element: element, url: attribute(element, kAXURLAttribute),
-                        title: attribute(element, kAXTitleAttribute) ?? "", frame: appKit(rect),
+                        title: attribute(element, kAXTitleAttribute) ?? "", frame: CGRect(x: rect.minX, y: screenTop - rect.maxY, width: rect.width, height: rect.height),
                         subrole: attribute(element, kAXSubroleAttribute) ?? "")
         }
     }
     static func application(for item: Item) -> NSRunningApplication? {
         let apps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular && !$0.isTerminated && $0.processIdentifier > 0 }
+        return application(for: item, apps: apps)
+    }
+    static func application(for item: Item, apps: [NSRunningApplication]) -> NSRunningApplication? {
         if let url = item.url {
             if let shortcut = Bundle(url: url), let target = shortcut.object(forInfoDictionaryKey: "ParallAppBundleId") as? String {
                 let storage = shortcut.object(forInfoDictionaryKey: "ParallDataStorage") as? String
@@ -65,6 +73,9 @@ enum DockAccessibility {
             // Ambiguous identical-bundle processes never pick an arbitrary tile.
             let titled = direct.filter { $0.localizedName == item.title }
             if titled.count == 1 { return titled[0] }
+            // A URL identifies this launcher, even when it is not running.
+            // A different app sharing its label must never become its target.
+            return nil
         }
         let named = apps.filter { $0.localizedName == item.title }
         return named.count == 1 ? named[0] : nil

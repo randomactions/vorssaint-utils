@@ -19,7 +19,7 @@ final class DockLockService {
         }
         guard type == .mouseMoved else { return true }
         let flags = event.flags.union(CGEventSource.flagsState(.combinedSessionState))
-        if !flags.contains(state.1), let zone = state.0.first(where: { $0.rect.contains(event.location) }) {
+        if !flags.contains(state.1), !Self.buttonsPressed, let zone = state.0.first(where: { $0.rect.contains(event.location) }) {
             event.location = CGPoint(x: event.location.x + zone.dx, y: event.location.y + zone.dy)
         }
         return true
@@ -32,6 +32,9 @@ final class DockLockService {
     private var relocationOrigin: CGPoint?
     private var geometryFingerprint = ""
     private var bypass: CGEventFlags = .maskAlternate
+    private static var buttonsPressed: Bool {
+        (0..<32).contains { CGEventSource.buttonState(.combinedSessionState, button: CGMouseButton(rawValue: UInt32($0))!) }
+    }
     private static let marker: Int64 = 0x56535344
     private var zones: [DockLockSupport.Zone] = []
     private init() {}
@@ -73,8 +76,7 @@ final class DockLockService {
         guard ProcessInfo.processInfo.systemUptime - stateLock.withLock({ lastPhysicalMovement }) > 1 else { return }
         if CGEventSource.flagsState(.combinedSessionState).contains(bypass) { attemptedPlacement = nil; return }
         guard inputTap.isRunning, !relocating, !zones.isEmpty, SessionActivity.shared.isActive, AXIsProcessTrusted(),
-              !CGEventSource.buttonState(.combinedSessionState, button: .left),
-              !CGEventSource.buttonState(.combinedSessionState, button: .right) else { return }
+              !Self.buttonsPressed else { return }
         refresh()
         let screens = NSScreen.screens, requested = DockOption.lockDisplay.string
         guard let target = requested == "main" ? screens.first : screens.first(where: { Self.identifier($0) == requested }),
@@ -98,7 +100,7 @@ final class DockLockService {
     }
     private func postRelocationStep(_ step: Int, path: (CGPoint, CGPoint), original: CGPoint, token: UUID) {
         guard relocation == token, relocating, inputTap.isRunning else { return }
-        if stateLock.withLock({ relocationCanceled }) || CGEventSource.buttonState(.combinedSessionState, button: .left) || CGEventSource.buttonState(.combinedSessionState, button: .right) { relocation = UUID(); relocating = false; relocationOrigin = nil; attemptedPlacement = nil; return }
+        if stateLock.withLock({ relocationCanceled }) || Self.buttonsPressed || CGEventSource.flagsState(.combinedSessionState).contains(bypass) { relocation = UUID(); relocating = false; relocationOrigin = nil; attemptedPlacement = nil; return }
         let fraction = min(1, CGFloat(step) / 8)
         let point = CGPoint(x: path.0.x + (path.1.x - path.0.x) * fraction, y: path.0.y + (path.1.y - path.0.y) * fraction)
         let event = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)
@@ -116,7 +118,7 @@ final class DockLockService {
         } else {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
                 guard let self, self.relocation == token, self.relocating else { return }
-                if self.stateLock.withLock({ self.relocationCanceled }) || CGEventSource.buttonState(.combinedSessionState, button: .left) || CGEventSource.buttonState(.combinedSessionState, button: .right) { self.relocating = false; self.relocationOrigin = nil; self.attemptedPlacement = nil; return }
+                if self.stateLock.withLock({ self.relocationCanceled }) || Self.buttonsPressed || CGEventSource.flagsState(.combinedSessionState).contains(self.bypass) { self.relocating = false; self.relocationOrigin = nil; self.attemptedPlacement = nil; return }
                 self.relocating = false; self.relocationOrigin = nil
                 if NSScreen.screens.contains(where: { $0.frame.contains(DockAccessibility.appKit(CGRect(origin: original, size: .zero)).origin) }) { CGWarpMouseCursorPosition(original) }
             }
@@ -124,8 +126,7 @@ final class DockLockService {
     }
     func stop() {
         if relocating, !stateLock.withLock({ relocationCanceled }),
-           !CGEventSource.buttonState(.combinedSessionState, button: .left),
-           !CGEventSource.buttonState(.combinedSessionState, button: .right),
+           !Self.buttonsPressed, !CGEventSource.flagsState(.combinedSessionState).contains(bypass),
            let origin = relocationOrigin { CGWarpMouseCursorPosition(origin) }
         relocation = UUID(); relocating = false; relocationOrigin = nil; attemptedPlacement = nil
         timer?.invalidate(); timer = nil

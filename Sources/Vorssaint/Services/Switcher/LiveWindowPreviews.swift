@@ -57,7 +57,7 @@ final class LiveWindowPreviews {
 
     private final class Output: NSObject, SCStreamOutput {
         let queue = DispatchQueue(label: "com.vorssaint.window-preview.frames", qos: .userInitiated)
-        private let context = CIContext(options: [.cacheIntermediates: false])
+        private static let sharedContext = CIContext(options: [.cacheIntermediates: false])
         private let update: (CGImage) -> Void
         private let lock = NSLock()
         private var pending: CGImage?
@@ -69,7 +69,7 @@ final class LiveWindowPreviews {
                   let status = attachments.first?[.status] as? Int, status == SCFrameStatus.complete.rawValue,
                   let pixel = CMSampleBufferGetImageBuffer(buffer) else { return }
             let image = CIImage(cvPixelBuffer: pixel)
-            guard let cgImage = context.createCGImage(image, from: image.extent) else { return }
+            guard let cgImage = Self.sharedContext.createCGImage(image, from: image.extent) else { return }
             let schedule = lock.withLock { () -> Bool in
                 pending = cgImage
                 guard !scheduled else { return false }

@@ -137,7 +137,7 @@ private struct DockPreviewPanelContent: View {
                                 onMiddleClick: { middleClick(window) },
                                 onToggleMinimized: { onToggleMinimized(window) },
                                 onCloseAll: { for item in windows { onMiddleClick(item) } },
-                                onMinimizeAll: { for item in windows where !item.isMinimized { onToggleMinimized(item) } }
+                                onMinimizeAll: minimizeAllWindows
 
                             )
                             .background {
@@ -256,6 +256,10 @@ private struct DockPreviewPanelContent: View {
         else if let action = WindowEnhancementAction(rawValue: DockOption.middleClickAction.string) { _ = WindowEnhancementActions.perform(action, on: item) }
     }
 
+    private func minimizeAllWindows() {
+        for item in windows where !item.isMinimized { onToggleMinimized(item) }
+    }
+
     private func compactRow(_ item: SwitcherItem) -> some View {
         HStack(spacing: 8) {
             if let icon = item.appIcon { Image(nsImage: icon).resizable().frame(width: 20, height: 20) }
@@ -273,7 +277,7 @@ private struct DockPreviewPanelContent: View {
         .overlay { DockPreviewMiddleClick(onClose: { middleClick(item) }) }
         .contextMenu {
             Button(l10n.s.dockPreviewPinPanel, action: onTogglePinned)
-            Button(DockEnhancementStrings.text(.minimizeAll)) { for window in windows { onToggleMinimized(window) } }
+            Button(DockEnhancementStrings.text(.minimizeAll), action: minimizeAllWindows)
             Button(DockEnhancementStrings.text(.closeAll)) { for window in windows { onMiddleClick(window) } }
         }
         .id(item.id)
