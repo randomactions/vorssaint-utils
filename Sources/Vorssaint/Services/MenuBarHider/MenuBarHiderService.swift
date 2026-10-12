@@ -112,7 +112,7 @@ final class MenuBarHiderService: NSResponder, ObservableObject {
     // advanced backend, and AppKit coordinates anchor its floating panel.
     var organizerAnchor: CGRect? { toggleItem?.button?.window?.frame }
 
-    func organizerGeometry() async -> (hidden: CGRect, always: CGRect?, excluded: Set<CGWindowID>)? {
+    @MainActor func organizerGeometry() async -> (hidden: CGRect, always: CGRect?, excluded: Set<CGWindowID>)? {
         guard isEnabled, MenuBarOrganizerPolicy.supportsAdvancedBackend else { return nil }
         func windowID(_ item: NSStatusItem?) -> CGWindowID? {
             item?.button?.window.flatMap { MenuBarHiderSupport.statusWindowID($0.windowNumber) }

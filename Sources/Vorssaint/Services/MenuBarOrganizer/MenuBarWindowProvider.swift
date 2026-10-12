@@ -14,18 +14,25 @@ final class MenuBarWindowProvider {
 
     private let bridge = MenuBarWindowServerBridge.self
     private let resolver = MenuBarItemSourceResolver()
-    @MainActor private var icons: [URL: NSImage] = [:]
     private let queue = DispatchQueue(label: "com.vorssaint.menu-bar-enumeration",
                                       qos: .utility)
 
-    func snapshot(hiddenDividerMidX: CGFloat?,
+    func snapshot(hiddenDivider: CGRect,
                   alwaysHiddenDividerMidX: CGFloat?,
                   excludedWindowIDs: Set<CGWindowID>, refreshIdentities: Bool = false) async -> MenuBarItemSnapshot {
         guard MenuBarOrganizerPolicy.supportsAdvancedBackend else {
             return MenuBarItemSnapshot(items: [], capabilities: .unavailable, enumerationSucceeded: false)
         }
         let enumeration = await enumerate()
-        let records = enumeration.records.filter { !excludedWindowIDs.contains($0.windowID) }
+        var displays = [CGDirectDisplayID](repeating: 0, count: 32)
+        var displayCount: UInt32 = 0
+        guard CGGetActiveDisplayList(UInt32(displays.count), &displays, &displayCount) == .success,
+              let scoped = MenuBarOrganizerPolicy.recordsOnDividerDisplay(
+                enumeration.records, divider: hiddenDivider,
+                displays: displays.prefix(Int(displayCount)).map { CGDisplayBounds($0) }) else {
+            return MenuBarItemSnapshot(items: [], capabilities: .unavailable, enumerationSucceeded: false)
+        }
+        let records = scoped.filter { !excludedWindowIDs.contains($0.windowID) }
         let sources = await resolver.resolve(records: records, refresh: refreshIdentities)
         let identities = MenuBarOrganizerSupport.identities(for: records, sources: sources)
         let currentPID = ProcessInfo.processInfo.processIdentifier
@@ -47,12 +54,6 @@ final class MenuBarWindowProvider {
                         bundleIdentifier: bundleIdentifier,
                         title: title)
                 let movable = resolved.state == .stable && !protected
-                let sourceApp = source.flatMap {
-                    NSRunningApplication(processIdentifier: $0.pid)
-                }
-                let icon = sourceApp?.bundleURL.map {
-                    cachedIcon(for: $0)
-                }
                 return ManagedMenuBarItem(
                     id: resolved.id,
                     windowID: record.windowID,
@@ -66,12 +67,11 @@ final class MenuBarWindowProvider {
                     frame: record.frame,
                     section: MenuBarOrganizerSupport.section(
                         itemMidX: record.frame.midX,
-                        hiddenDividerMidX: hiddenDividerMidX,
+                        hiddenDividerMidX: hiddenDivider.midX,
                         alwaysHiddenDividerMidX: alwaysHiddenDividerMidX),
                     identityState: resolved.state,
                     isMovable: movable,
-                    isProtected: protected,
-                    image: icon)
+                    isProtected: protected)
             }
             .sorted {
                 if $0.frame.minX == $1.frame.minX {
@@ -91,15 +91,6 @@ final class MenuBarWindowProvider {
                     $0.identityState == .provisional
                 }),
             enumerationSucceeded: enumeration.succeeded)
-    }
-
-    @MainActor func invalidateIcons() { icons.removeAll() }
-
-    @MainActor private func cachedIcon(for url: URL) -> NSImage {
-        if let icon = icons[url] { return icon }
-        let icon = NSWorkspace.shared.icon(forFile: url.path)
-        icons[url] = icon
-        return icon
     }
 
     private func enumerate() async -> EnumerationResult {

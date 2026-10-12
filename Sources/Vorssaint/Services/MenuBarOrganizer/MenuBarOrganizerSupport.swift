@@ -65,7 +65,6 @@ struct ManagedMenuBarItem: Identifiable {
     let identityState: MenuBarItemIdentityState
     let isMovable: Bool
     let isProtected: Bool
-    let image: NSImage?
 
     var displayName: String {
         let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -106,7 +105,42 @@ struct MenuBarItemSnapshot {
     let enumerationSucceeded: Bool
 }
 
+/// An in-session destination, never an identity that authorizes moving/clicking
+/// the anchor itself. Unknown hosted icons can still mark an exact insertion
+/// slot without guessing their originating application.
+struct MenuBarItemAnchor {
+    let windowID: CGWindowID
+    let ownerPID: pid_t
+    let ownerBundleIdentifier: String
+
+    init(_ item: ManagedMenuBarItem) {
+        windowID = item.windowID
+        ownerPID = item.ownerPID
+        ownerBundleIdentifier = item.ownerBundleIdentifier
+    }
+
+    func resolve(in items: [ManagedMenuBarItem]) -> ManagedMenuBarItem? {
+        let matches = items.filter {
+            $0.windowID == windowID && $0.ownerPID == ownerPID
+                && $0.ownerBundleIdentifier == ownerBundleIdentifier
+                && MenuBarOrganizerPolicy.validFrame($0.frame)
+        }
+        return matches.count == 1 ? matches.first : nil
+    }
+}
+
 enum MenuBarOrganizerSupport {
+    /// Hosted items share a process. Identify the individual status window as
+    /// well as its host; position and PID alone are insufficient on macOS 26.
+    static func routeEvent(_ event: CGEvent, to windowID: CGWindowID, pid: pid_t, command: Bool) {
+        event.flags = command ? .maskCommand : []
+        event.setIntegerValueField(.eventTargetUnixProcessID, value: Int64(pid))
+        event.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(windowID))
+        event.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(windowID))
+        // WindowServer's window-ID field, used only by the version-gated backend.
+        if let field = CGEventField(rawValue: 0x33) { event.setIntegerValueField(field, value: Int64(windowID)) }
+    }
+
     static let controlCenterBundleIdentifier = "com.apple.controlcenter"
     static let systemUIServerBundleIdentifier = "com.apple.systemuiserver"
 
@@ -176,6 +210,7 @@ enum MenuBarOrganizerSupport {
                         state: state)
         }
 
+        let counts = Dictionary(grouping: seeds, by: { "\($0.namespace)\u{0}\($0.title)" }).mapValues(\.count)
         var occurrences: [String: Int] = [:]
         var result: [CGWindowID: ResolvedMenuBarItemIdentity] = [:]
         for seed in seeds.sorted(by: {
@@ -190,7 +225,7 @@ enum MenuBarOrganizerSupport {
                 id: MenuBarItemIdentity(bundleIdentifier: seed.namespace,
                                         title: seed.title,
                                         occurrence: occurrence),
-                state: seed.state,
+                state: counts[key] == 1 ? seed.state : .provisional,
                 source: seed.source)
         }
         return result
@@ -248,15 +283,10 @@ enum MenuBarOrganizerSupport {
         return sourcePID ?? ownerPID
     }
 
-    static func isSystemImmovable(bundleIdentifier: String, title: String) -> Bool {
-        let normalized = title.lowercased()
-        if bundleIdentifier == controlCenterBundleIdentifier {
-            return normalized.contains("clock")
-                || normalized.contains("siri")
-                || isGenericControlCenterHostedTitle(title)
-        }
-        return bundleIdentifier == systemUIServerBundleIdentifier
-            && (normalized.contains("clock") || normalized.contains("notification"))
+    static func isSystemImmovable(bundleIdentifier: String, title _: String) -> Bool {
+        // A resolved third-party source has its own bundle identifier. Keep
+        // system-host controls protected regardless of locale or display title.
+        bundleIdentifier == controlCenterBundleIdentifier || bundleIdentifier == systemUIServerBundleIdentifier
     }
 
 

@@ -10,6 +10,31 @@ extension MenuBarOrganizerCapabilities {
 }
 
 enum MenuBarOrganizerPolicy {
+    /// A divider belongs to the display containing its right edge, even when
+    /// its expanded spacer extends offscreen. Never classify another display's
+    /// icons against it. Offscreen ownership is ambiguous for aligned displays;
+    /// omit those records rather than guess and send input to the wrong bar.
+    static func recordsOnDividerDisplay(_ records: [MenuBarOrganizerWindowRecord],
+                                        divider: CGRect, displays: [CGRect]) -> [MenuBarOrganizerWindowRecord]? {
+        let point = CGPoint(x: divider.maxX - 1, y: divider.midY)
+        let matches = displays.filter { $0.contains(point) }
+        guard matches.count == 1, let display = matches.first else { return nil }
+        let alignedDisplays = displays.filter { $0.minY <= divider.midY && divider.midY < $0.minY + 64 }
+        return records.filter { record in
+            guard abs(record.frame.midY - divider.midY) < 8 else { return false }
+            if display.contains(record.frame) { return alignedDisplays.count == 1 || record.isOnScreen }
+            return alignedDisplays.count == 1 && !record.isOnScreen
+                && record.frame.maxX <= display.minX
+                && !displays.contains(where: { $0.intersects(record.frame) })
+        }
+    }
+
+    /// The main-menu level is the persistent bar itself, including hosted
+    /// status items on recent macOS. Only a visible popup blocks arrangement.
+    static func isOpenMenuWindow(level: Int, popupLevel: Int, isStatusItem: Bool, alpha: Double) -> Bool {
+        level == popupLevel && !isStatusItem && alpha > 0
+    }
+
     static var supportsAdvancedBackend: Bool {
         supportsAdvancedBackend(majorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion)
     }

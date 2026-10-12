@@ -4,6 +4,7 @@
 import Foundation
 
 struct MenuBarEditorStrings {
+    let previewPermission: String
     let removalFailed: String
     let inventory: String
     let visible: String
@@ -18,6 +19,7 @@ extension FeatureStrings {
     static func menuBarEditor(_ language: AppLanguage) -> MenuBarEditorStrings {
         switch language {
         case .enUS: return MenuBarEditorStrings(
+            previewPermission: "Allow Screen Recording to show the actual menu-bar icons. Previews stay on this Mac; arranging icons only needs Accessibility.",
             removalFailed: "The previous icon spacing could not be restored. The feature remains installed so you can retry Restore.",
             inventory: "Menu-bar items from running apps appear here. Drag an icon between groups, or right-click to move it.",
             visible: "Always shown in the menu bar.",
@@ -28,6 +30,7 @@ extension FeatureStrings {
             unavailable: "Menu-bar items could not be read. Grant Accessibility if needed, then click Refresh."
         )
         case .ptBR: return MenuBarEditorStrings(
+            previewPermission: "Permita Gravação de Tela para mostrar os ícones reais da barra de menus. As prévias ficam neste Mac; organizar ícones só exige Acessibilidade.",
             removalFailed: "Não foi possível restaurar o espaçamento anterior. O recurso continua instalado para você tentar Restaurar novamente.",
             inventory: "Aqui aparecem os itens dos apps em execução. Arraste um ícone entre os grupos ou clique com o botão direito para movê-lo.",
             visible: "Sempre visíveis na barra de menus.",
@@ -38,6 +41,7 @@ extension FeatureStrings {
             unavailable: "Não foi possível ler os itens. Permita Acessibilidade se necessário e clique em Atualizar."
         )
         case .ru: return MenuBarEditorStrings(
+            previewPermission: "Разрешите запись экрана, чтобы видеть настоящие значки строки меню. Изображения остаются на этом Mac; для перемещения достаточно Универсального доступа.",
             removalFailed: "Не удалось восстановить прежний интервал значков. Функция остаётся установленной, чтобы можно было повторить восстановление.",
             inventory: "Здесь показаны значки работающих приложений. Перетащите значок в другую группу или выберите её в контекстном меню.",
             visible: "Всегда видны в строке меню.",
@@ -48,6 +52,7 @@ extension FeatureStrings {
             unavailable: "Не удалось прочитать значки. При необходимости разрешите Универсальный доступ и нажмите «Обновить»."
         )
         case .uk: return MenuBarEditorStrings(
+            previewPermission: "Дозвольте запис екрана, щоб бачити справжні значки смуги меню. Зображення залишаються на цьому Mac; для переміщення достатньо Доступності.",
             removalFailed: "Не вдалося відновити попередній інтервал значків. Функція залишається встановленою, щоб ви могли повторити відновлення.",
             inventory: "Тут показано значки запущених програм. Перетягніть значок між групами або виберіть групу в контекстному меню.",
             visible: "Завжди видимі в смузі меню.",
@@ -58,6 +63,7 @@ extension FeatureStrings {
             unavailable: "Не вдалося прочитати значки. За потреби надайте Доступність і натисніть «Оновити»."
         )
         case .es: return MenuBarEditorStrings(
+            previewPermission: "Permite Grabación de pantalla para mostrar los iconos reales. Las vistas previas permanecen en este Mac; ordenarlos solo requiere Accesibilidad.",
             removalFailed: "No se pudo restaurar el espaciado anterior. La función sigue instalada para que puedas volver a restaurarlo.",
             inventory: "Aquí aparecen los iconos de las apps en ejecución. Arrástralos entre grupos o haz clic derecho para moverlos.",
             visible: "Siempre visibles en la barra de menús.",
@@ -68,6 +74,7 @@ extension FeatureStrings {
             unavailable: "No se pudieron leer los iconos. Permite Accesibilidad si es necesario y pulsa Actualizar."
         )
         case .de: return MenuBarEditorStrings(
+            previewPermission: "Erlaube Bildschirmaufnahme, um die tatsächlichen Menüleistensymbole zu sehen. Vorschauen bleiben auf diesem Mac; zum Anordnen reichen Bedienungshilfen.",
             removalFailed: "Der vorherige Symbolabstand konnte nicht wiederhergestellt werden. Die Funktion bleibt installiert, damit du es erneut versuchen kannst.",
             inventory: "Hier erscheinen Menüleistensymbole laufender Apps. Ziehe ein Symbol in eine Gruppe oder verschiebe es per Rechtsklick.",
             visible: "Immer in der Menüleiste sichtbar.",
@@ -78,6 +85,7 @@ extension FeatureStrings {
             unavailable: "Die Symbole konnten nicht gelesen werden. Erlaube bei Bedarf Bedienungshilfen und klicke auf Aktualisieren."
         )
         case .fr: return MenuBarEditorStrings(
+            previewPermission: "Autorisez Enregistrement de l’écran pour afficher les vraies icônes. Les aperçus restent sur ce Mac ; seule Accessibilité est nécessaire pour les déplacer.",
             removalFailed: "Impossible de rétablir l’espacement précédent. La fonction reste installée pour vous permettre de réessayer.",
             inventory: "Les icônes des apps en cours apparaissent ici. Glissez une icône entre les groupes ou déplacez-la par clic droit.",
             visible: "Toujours visibles dans la barre des menus.",
@@ -88,6 +96,7 @@ extension FeatureStrings {
             unavailable: "Impossible de lire les icônes. Autorisez Accessibilité si nécessaire, puis actualisez."
         )
         case .it: return MenuBarEditorStrings(
+            previewPermission: "Consenti Registrazione schermo per vedere le icone reali. Le anteprime restano su questo Mac; per riordinarle basta Accessibilità.",
             removalFailed: "Impossibile ripristinare la spaziatura precedente. La funzione resta installata per consentire un nuovo tentativo.",
             inventory: "Qui appaiono le icone delle app in esecuzione. Trascina un’icona tra i gruppi o spostala con un clic destro.",
             visible: "Sempre visibili nella barra dei menu.",
@@ -98,6 +107,7 @@ extension FeatureStrings {
             unavailable: "Impossibile leggere le icone. Consenti Accessibilità se necessario, poi aggiorna."
         )
         case .sk: return MenuBarEditorStrings(
+            previewPermission: "Povoľte nahrávanie obrazovky pre skutočné ikony lišty. Náhľady zostávajú na tomto Macu; na usporiadanie stačí Prístupnosť.",
             removalFailed: "Predchádzajúce rozostupy ikon sa nepodarilo obnoviť. Funkcia zostáva nainštalovaná, aby ste mohli obnovenie skúsiť znova.",
             inventory: "Tu sa zobrazujú ikony spustených aplikácií. Presuňte ikonu medzi skupinami alebo použite pravé tlačidlo myši.",
             visible: "Vždy viditeľné v lište menu.",
@@ -108,6 +118,7 @@ extension FeatureStrings {
             unavailable: "Ikony sa nepodarilo načítať. V prípade potreby povoľte Prístupnosť a obnovte zoznam."
         )
         case .ja: return MenuBarEditorStrings(
+            previewPermission: "実際のメニューバーアイコンを表示するには画面収録を許可してください。プレビューはこのMac内に保持され、並べ替えにはアクセシビリティのみが必要です。",
             removalFailed: "以前のアイコン間隔を復元できませんでした。再試行できるよう、この機能はインストールされたままです。",
             inventory: "実行中のアプリのメニューバー項目を表示します。アイコンを別のグループにドラッグするか、右クリックして移動できます。",
             visible: "メニューバーに常に表示します。",
@@ -118,6 +129,7 @@ extension FeatureStrings {
             unavailable: "メニューバー項目を読み取れません。必要に応じてアクセシビリティを許可し、更新してください。"
         )
         case .ko: return MenuBarEditorStrings(
+            previewPermission: "실제 메뉴 막대 아이콘을 표시하려면 화면 기록을 허용하세요. 미리보기는 이 Mac에만 유지되며 아이콘 정렬에는 손쉬운 사용 권한만 필요합니다.",
             removalFailed: "이전 아이콘 간격을 복원하지 못했습니다. 다시 복원할 수 있도록 기능은 설치된 상태로 유지됩니다.",
             inventory: "실행 중인 앱의 메뉴 막대 항목이 표시됩니다. 아이콘을 다른 그룹으로 드래그하거나 오른쪽 클릭하여 이동하세요.",
             visible: "메뉴 막대에 항상 표시됩니다.",
@@ -128,6 +140,7 @@ extension FeatureStrings {
             unavailable: "메뉴 막대 항목을 읽을 수 없습니다. 필요한 경우 손쉬운 사용을 허용한 후 새로 고침하세요."
         )
         case .zhHans: return MenuBarEditorStrings(
+            previewPermission: "允许屏幕录制以显示真实的菜单栏图标。预览仅保留在此 Mac 上；排列图标只需要辅助功能权限。",
             removalFailed: "无法恢复原来的图标间距。此功能将保留安装，以便您重试恢复。",
             inventory: "这里显示正在运行的应用的菜单栏项目。将图标拖到其他分组，或右键点击以移动。",
             visible: "始终显示在菜单栏中。",
@@ -138,6 +151,7 @@ extension FeatureStrings {
             unavailable: "无法读取菜单栏项目。请按需允许辅助功能，然后刷新。"
         )
         case .zhTW: return MenuBarEditorStrings(
+            previewPermission: "允許螢幕錄製以顯示實際的選單列圖示。預覽只保留在此 Mac 上；排列圖示只需要輔助使用權限。",
             removalFailed: "無法還原原來的圖示間距。此功能會保持安裝，讓您可以重試還原。",
             inventory: "這裡顯示執行中 App 的選單列項目。將圖示拖到其他群組，或按右鍵移動。",
             visible: "一律顯示在選單列中。",
@@ -148,6 +162,7 @@ extension FeatureStrings {
             unavailable: "無法讀取選單列項目。請視需要允許輔助使用，然後重新整理。"
         )
         case .zhHK: return MenuBarEditorStrings(
+            previewPermission: "允許螢幕錄製以顯示實際的選單列圖示。預覽只保留在此 Mac 上；排列圖示只需要輔助使用權限。",
             removalFailed: "無法還原原來的圖示間距。此功能將保持安裝，以便您重試還原。",
             inventory: "這裡顯示執行中 App 的選單列項目。將圖像拖到其他群組，或按右鍵移動。",
             visible: "一律顯示在選單列中。",
@@ -158,6 +173,7 @@ extension FeatureStrings {
             unavailable: "無法讀取選單列項目。請視需要允許輔助使用，然後重新整理。"
         )
         case .tr: return MenuBarEditorStrings(
+            previewPermission: "Gerçek menü çubuğu simgelerini görmek için Ekran Kaydı izni verin. Önizlemeler bu Mac’te kalır; düzenlemek için yalnızca Erişilebilirlik gerekir.",
             removalFailed: "Önceki simge aralığı geri yüklenemedi. Yeniden deneyebilmeniz için özellik yüklü kalır.",
             inventory: "Çalışan uygulamaların menü çubuğu simgeleri burada görünür. Bir simgeyi gruplar arasında sürükleyin veya taşımak için sağ tıklayın.",
             visible: "Menü çubuğunda her zaman görünür.",

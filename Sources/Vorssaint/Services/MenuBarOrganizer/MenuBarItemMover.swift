@@ -25,6 +25,7 @@ final class MenuBarItemMover {
 
     func move(item: ManagedMenuBarItem,
               destinationFrame: CGRect,
+              destinationWindowID: CGWindowID,
               placeAfter: Bool,
               onDragStart: (() -> Void)? = nil) async throws {
         guard MenuBarOrganizerPolicy.supportsAdvancedBackend else { throw MenuBarItemMoveError.itemUnavailable }
@@ -73,6 +74,8 @@ final class MenuBarItemMover {
         try await postCommandDrag(
             from: CGPoint(x: item.frame.midX, y: item.frame.midY),
             to: end,
+            windowID: item.windowID,
+            destinationWindowID: destinationWindowID,
             targetPID: targetPID,
             onDragStart: onDragStart)
     }
@@ -108,8 +111,10 @@ final class MenuBarItemMover {
             ownerPID: item.ownerPID,
             ownerBundleIdentifier: item.ownerBundleIdentifier,
             sourcePID: item.sourcePID)
-        inputCleanup.release = { [weak self] in self?.post(up, targetPID: targetPID) }
-        post(down, targetPID: targetPID)
+        MenuBarOrganizerSupport.routeEvent(down, to: item.windowID, pid: targetPID, command: false)
+        MenuBarOrganizerSupport.routeEvent(up, to: item.windowID, pid: targetPID, command: false)
+        inputCleanup.release = { [weak self] in self?.post(up) }
+        post(down)
         do {
             try await Task.sleep(for: .milliseconds(35))
         } catch {
@@ -137,6 +142,8 @@ final class MenuBarItemMover {
 
     private func postCommandDrag(from start: CGPoint,
                                  to end: CGPoint,
+                                 windowID: CGWindowID,
+                                 destinationWindowID: CGWindowID,
                                  targetPID: pid_t,
                                  onDragStart: (() -> Void)?) async throws {
         guard let source = CGEventSource(stateID: .hidSystemState),
@@ -154,13 +161,13 @@ final class MenuBarItemMover {
         source.setLocalEventsFilterDuringSuppressionState(
             [.permitLocalMouseEvents, .permitLocalKeyboardEvents, .permitSystemDefinedEvents],
             state: .eventSuppressionStateSuppressionInterval)
-        down.flags = .maskCommand
-        up.flags = .maskCommand
+        MenuBarOrganizerSupport.routeEvent(down, to: windowID, pid: targetPID, command: true)
+        MenuBarOrganizerSupport.routeEvent(up, to: destinationWindowID, pid: targetPID, command: false)
 
         CGWarpMouseCursorPosition(start)
-        inputCleanup.release = { [weak self] in self?.post(up, targetPID: targetPID) }
+        inputCleanup.release = { [weak self] in self?.post(up) }
         onDragStart?()
-        post(down, targetPID: targetPID)
+        post(down)
         do {
             try await Task.sleep(for: .milliseconds(18))
             for step in 1...10 {
@@ -174,8 +181,8 @@ final class MenuBarItemMover {
                                          mouseCursorPosition: point,
                                          mouseButton: .left)
                 else { throw MenuBarItemMoveError.eventCreationFailed }
-                drag.flags = .maskCommand
-                post(drag, targetPID: targetPID)
+                MenuBarOrganizerSupport.routeEvent(drag, to: windowID, pid: targetPID, command: true)
+                post(drag)
                 try await Task.sleep(for: .milliseconds(8))
             }
         } catch {
@@ -188,12 +195,10 @@ final class MenuBarItemMover {
         inputCleanup.finish()
     }
 
-    private func post(_ event: CGEvent, targetPID: pid_t?) {
-        if let targetPID {
-            event.postToPid(targetPID)
-        } else {
-            event.post(tap: .cghidEventTap)
-        }
+    private func post(_ event: CGEvent) {
+        // Enter the session stream so WindowServer participates in reordering;
+        // posting only to the application bypasses the native drag machinery.
+        event.post(tap: .cgSessionEventTap)
     }
 
     static func hasOpenMenu(for pids: Set<pid_t>) -> Bool {
@@ -201,16 +206,17 @@ final class MenuBarItemMover {
             [.optionOnScreenOnly, .excludeDesktopElements],
             kCGNullWindowID) as? [[String: Any]]
         else { return true }
-        let menuLevels = Set([
-            Int(CGWindowLevelForKey(.popUpMenuWindow)),
-            Int(CGWindowLevelForKey(.mainMenuWindow)),
-        ])
+        let statusItems = Set(MenuBarWindowServerBridge.menuBarWindowIDs() ?? [])
         return windows.contains { dictionary in
             guard let pid = (dictionary[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,
                   pids.contains(pid),
                   let level = (dictionary[kCGWindowLayer as String] as? NSNumber)?.intValue
             else { return false }
-            return menuLevels.contains(level)
+            let id = (dictionary[kCGWindowNumber as String] as? NSNumber)?.uint32Value ?? 0
+            let alpha = (dictionary[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1
+            return MenuBarOrganizerPolicy.isOpenMenuWindow(
+                level: level, popupLevel: Int(CGWindowLevelForKey(.popUpMenuWindow)),
+                isStatusItem: statusItems.contains(id), alpha: alpha)
         }
     }
 

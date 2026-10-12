@@ -6,6 +6,11 @@ import AppKit
 /// Production teardown/recovery bodies run against isolated hider preferences
 /// and input/panel doubles, without creating status items or posting events.
 enum MenuBarOrganizerLifecycleTests {
+    final class MenuBarItemPreviewProvider {
+        static let shared = MenuBarItemPreviewProvider()
+        var stops = 0
+        func stop() { stops += 1 }
+    }
     enum MenuBarGlobalSpacing { static var hasSavedValues = false }
     enum MenuBarOrganizerPolicy {
         static var supportsAdvancedBackend = true
@@ -79,6 +84,8 @@ enum MenuBarOrganizerLifecycleTests {
             host.panel = Panel()
             let panel = host.panel!
             host.stop()
+            suite.expect(MenuBarItemPreviewProvider.shared.stops > 0,
+                         "organizer teardown cancels previews and clears captured pixels")
             suite.expect(releases == 1 && !host.isRunning && !host.isBusy && !panel.isVisible,
                          "stop releases pending input synchronously and dismisses the organizer")
             suite.expect(!host.appearance.enabled, "explicit teardown removes decoration as well as input")

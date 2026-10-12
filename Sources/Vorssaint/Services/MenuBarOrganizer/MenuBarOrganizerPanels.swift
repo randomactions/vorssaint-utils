@@ -136,8 +136,9 @@ private struct MenuBarDrawerView: View {
 
 struct MenuBarItemThumbnail: View {
     let item: ManagedMenuBarItem
+    @ObservedObject private var previews = MenuBarItemPreviewProvider.shared
     var body: some View {
-        if let image = item.image { Image(nsImage: image).resizable().scaledToFit() }
+        if let image = previews.images[item.windowID] { Image(nsImage: image).resizable().scaledToFit() }
         else { Image(systemName: "menubar.rectangle").resizable().scaledToFit().foregroundStyle(.secondary) }
     }
 }

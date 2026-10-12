@@ -26,7 +26,7 @@ final class MenuBarOrganizerService: ObservableObject {
     private var refreshTimer: Timer?
     private var subscriptions: Set<AnyCancellable> = []
     private var editorVisible = false
-    private var undo: (id: MenuBarItemIdentity, section: MenuBarOrganizerSection, neighbor: MenuBarItemIdentity?)?
+    private var undo: (id: MenuBarItemIdentity, section: MenuBarOrganizerSection, neighbor: MenuBarItemAnchor?)?
     private var generation: UInt64 = 0
     private var needsIdentityRefresh = true
     private var inventoryRevision: UInt64 = 0
@@ -41,6 +41,12 @@ final class MenuBarOrganizerService: ObservableObject {
     private init() {
         Permissions.shared.$accessibility.removeDuplicates().sink { [weak self] _ in
             Task { @MainActor in self?.inventoryChanged() }
+        }.store(in: &subscriptions)
+        Permissions.shared.$screenRecording.removeDuplicates().sink { [weak self] granted in
+            Task { @MainActor in
+                if !granted { MenuBarItemPreviewProvider.shared.stop() }
+                self?.refresh()
+            }
         }.store(in: &subscriptions)
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
             .sink { [weak self] _ in Task { @MainActor in self?.inventoryChanged() } }
@@ -80,13 +86,16 @@ final class MenuBarOrganizerService: ObservableObject {
 
     private func inventoryChanged() {
         inventoryRevision &+= 1
+        undo = nil
+        canUndo = false
         needsIdentityRefresh = true
-        provider.invalidateIcons()
+        MenuBarItemPreviewProvider.shared.stop()
         syncWithPreferences()
         refresh()
     }
 
     private func stopOperations() {
+        MenuBarItemPreviewProvider.shared.stop()
         generation &+= 1
         isRunning = false
         operationTask?.cancel()
@@ -140,7 +149,10 @@ final class MenuBarOrganizerService: ObservableObject {
     private func updateRefreshTimer() {
         refreshTimer?.invalidate()
         refreshTimer = nil
-        guard isRunning, editorVisible || panel?.isVisible == true else { return }
+        guard isRunning, editorVisible || panel?.isVisible == true else {
+            MenuBarItemPreviewProvider.shared.stop()
+            return
+        }
         let timer = Timer(timeInterval: 3, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
@@ -168,14 +180,16 @@ final class MenuBarOrganizerService: ObservableObject {
         guard let geometry = await hider.organizerGeometry() else {
             if generation == expected, !Task.isCancelled {
                 items = []
+                MenuBarItemPreviewProvider.shared.stop()
                 inventoryUnavailable = true
+                diagnostic("inventory unavailable: separator geometry")
             }
             return nil
         }
         let refreshIdentities = needsIdentityRefresh
         let revision = inventoryRevision
         needsIdentityRefresh = false
-        let snapshot = await provider.snapshot(hiddenDividerMidX: geometry.hidden.midX,
+        let snapshot = await provider.snapshot(hiddenDivider: geometry.hidden,
                                               alwaysHiddenDividerMidX: geometry.always?.midX,
                                               excludedWindowIDs: geometry.excluded,
                                               refreshIdentities: refreshIdentities)
@@ -184,6 +198,10 @@ final class MenuBarOrganizerService: ObservableObject {
         inventoryUnavailable = !snapshot.enumerationSucceeded
         // Failed scans are never used as candidates for input synthesis.
         items = snapshot.enumerationSucceeded ? snapshot.items.filter { MenuBarOrganizerPolicy.validFrame($0.frame) } : []
+        if !isBusy, editorVisible || panel?.isVisible == true {
+            MenuBarItemPreviewProvider.shared.refresh(editorVisible ? items : items.filter { $0.section != .alwaysHidden })
+        }
+        diagnostic(snapshot.enumerationSucceeded ? "inventory read: \(items.count) items" : "inventory unavailable: window enumeration")
         return snapshot.enumerationSucceeded ? snapshot : nil
     }
 
@@ -223,6 +241,8 @@ final class MenuBarOrganizerService: ObservableObject {
 
     func move(id: MenuBarItemIdentity, before target: MenuBarItemIdentity?, to section: MenuBarOrganizerSection) {
         guard id != target else { return }
+        let anchor = target.flatMap { target in items.first(where: { $0.id == target }).map(MenuBarItemAnchor.init) }
+        guard target == nil || anchor != nil else { report(MenuBarItemMoveError.itemUnavailable); return }
         run { [weak self] expected in
             guard let self else { return }
             hider.prepareForOrganizerOperation()
@@ -231,8 +251,8 @@ final class MenuBarOrganizerService: ObservableObject {
             let original = try uniqueItem(id)
             let ordered = MenuBarOrganizerSupport.orderedItems(items, in: original.section)
             let index = ordered.firstIndex { $0.windowID == original.windowID }!
-            let neighbor = index + 1 < ordered.count ? ordered[index + 1].id : nil
-            try await relocate(id: id, before: target, to: section, expected: expected)
+            let neighbor = index + 1 < ordered.count ? MenuBarItemAnchor(ordered[index + 1]) : nil
+            try await relocate(id: id, before: anchor, to: section, expected: expected)
             undo = (id, original.section, neighbor)
             canUndo = true
             hider.resumeAfterOrganizerOperation()
@@ -252,7 +272,7 @@ final class MenuBarOrganizerService: ObservableObject {
         }
     }
 
-    private func relocate(id: MenuBarItemIdentity, before target: MenuBarItemIdentity?,
+    private func relocate(id: MenuBarItemIdentity, before target: MenuBarItemAnchor?,
                           to section: MenuBarOrganizerSection, expected: UInt64,
                           requiresVisibleDestination: Bool = false) async throws {
         for attempt in 0..<2 {
@@ -261,7 +281,8 @@ final class MenuBarOrganizerService: ObservableObject {
                   let geometry = await hider.organizerGeometry() else { throw MenuBarItemMoveError.itemUnavailable }
             let item = try uniqueItem(id)
             guard item.isMovable else { throw MenuBarItemMoveError.itemNotMovable }
-            let targetItem = try target.map { try uniqueItem($0, allowProtected: true) }
+            let targetItem = target?.resolve(in: items)
+            guard target == nil || targetItem != nil else { throw MenuBarItemMoveError.itemUnavailable }
             if let targetItem, targetItem.section != section { throw MenuBarItemMoveError.itemUnavailable }
             if requiresVisibleDestination {
                 guard let targetItem, let strip = visibleStrip(containing: geometry.hidden),
@@ -276,6 +297,11 @@ final class MenuBarOrganizerService: ObservableObject {
             let lastVisible = section == .visible && targetItem == nil
                 ? MenuBarOrganizerSupport.orderedItems(items, in: .visible).last(where: { $0.id != id }) : nil
             guard let destination = targetItem?.frame ?? lastVisible?.frame ?? divider else { throw MenuBarItemMoveError.itemUnavailable }
+            let destinationWindowID = targetItem?.windowID ?? lastVisible?.windowID
+                ?? (MenuBarWindowServerBridge.menuBarWindowIDs() ?? []).first {
+                    MenuBarWindowServerBridge.frame(of: $0) == destination
+                }
+            guard let destinationWindowID else { throw MenuBarItemMoveError.itemUnavailable }
             let placeAfter = targetItem == nil && section == .visible
             let insertion = MenuBarOrganizerPolicy.insertionFrame(destination, after: placeAfter)
             let quartzDestination = CGRect(x: insertion.minX, y: item.frame.minY,
@@ -283,6 +309,7 @@ final class MenuBarOrganizerService: ObservableObject {
             // A native item belongs to one menu bar; do not drag across displays.
             guard abs(destination.midY - item.frame.midY) < 8 else { throw MenuBarItemMoveError.itemUnavailable }
             try await mover.move(item: item, destinationFrame: quartzDestination,
+                                 destinationWindowID: destinationWindowID,
                                  placeAfter: placeAfter,
                                  onDragStart: { [weak self] in self?.activationRecovery?.mayBeDisplaced = true })
             try await Task.sleep(for: .milliseconds(180 + attempt * 80))
@@ -311,7 +338,7 @@ final class MenuBarOrganizerService: ObservableObject {
             guard MenuBarOrganizerPolicy.canActivate(original) else { throw MenuBarItemMoveError.itemUnavailable }
             let ordered = MenuBarOrganizerSupport.orderedItems(items, in: original.section)
             let index = ordered.firstIndex { $0.windowID == original.windowID }!
-            let neighbor = index + 1 < ordered.count ? ordered[index + 1].id : nil
+            let neighbor = index + 1 < ordered.count ? MenuBarItemAnchor(ordered[index + 1]) : nil
             let moved = original.section != .visible
             if moved {
                 // The first visible item can abut the notch on a crowded bar.
@@ -320,7 +347,7 @@ final class MenuBarOrganizerService: ObservableObject {
                       let strip = visibleStrip(containing: geometry.hidden),
                       let target = MenuBarOrganizerPolicy.activationTarget(for: original, in: items, strip: strip)
                 else { throw MenuBarItemMoveError.itemUnavailable }
-                try await relocate(id: id, before: target.id, to: .visible, expected: expected,
+                try await relocate(id: id, before: MenuBarItemAnchor(target), to: .visible, expected: expected,
                                    requiresVisibleDestination: true)
             }
             try checkAccess()
@@ -383,11 +410,18 @@ final class MenuBarOrganizerService: ObservableObject {
     }
 
     private func report(_ error: Error) {
+        diagnostic("operation failed: \(error)")
         switch error {
         case MenuBarItemMoveError.permissionMissing: message = text.permission
         case MenuBarItemMoveError.busy, MenuBarItemMoveError.menuOpen: message = text.busy
         case MenuBarItemMoveError.verificationFailed: message = text.failed
         default: message = text.unavailable
+        }
+    }
+
+    private func diagnostic(_ message: String) {
+        if ProcessInfo.processInfo.environment["VORSSAINT_MENU_BAR_DIAGNOSTICS"] == "1" {
+            NSLog("Menu bar %@", message)
         }
     }
 }

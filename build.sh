@@ -257,6 +257,7 @@ if (( TEST )); then
         Sources/Vorssaint/Core/MenuBarHiderStrings.swift
         Sources/Vorssaint/Core/MenuBarEditorStrings.swift
         Sources/Vorssaint/Core/MenuBarOrganizerStrings.swift
+        Sources/Vorssaint/Services/MenuBarOrganizer/MenuBarItemPreviewProvider.swift
         Sources/Vorssaint/Services/MenuBarOrganizer/MenuBarOrganizerSupport.swift
         Sources/Vorssaint/Services/MenuBarOrganizer/MenuBarOrganizerPolicy.swift
         Sources/Vorssaint/Services/MenuBarOrganizer/MenuBarGlobalSpacing.swift

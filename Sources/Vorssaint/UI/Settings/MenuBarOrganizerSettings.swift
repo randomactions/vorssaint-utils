@@ -34,6 +34,10 @@ struct MenuBarOrganizerEditor: View {
             if service.inventoryUnavailable {
                 Text(labels.unavailable).font(.caption).foregroundStyle(.secondary)
             }
+            if MenuBarOrganizerPolicy.supportsAdvancedBackend && hiderEnabled && !permissions.screenRecording {
+                PermissionRow(kind: .screenRecording)
+                Text(labels.previewPermission).font(.caption).foregroundStyle(.secondary)
+            }
             HStack {
                 TextField(text.placeholder, text: $query).textFieldStyle(.roundedBorder)
                 Button(text.refresh) { service.refresh() }.disabled(!service.isRunning || service.isBusy)
@@ -124,14 +128,14 @@ struct MenuBarOrganizerEditor: View {
     }
 
     @ViewBuilder private func itemCell(_ item: ManagedMenuBarItem, section: MenuBarOrganizerSection) -> some View {
-        let tile = MenuBarItemThumbnail(item: item).frame(width: 18, height: 18)
+        let tile = MenuBarItemThumbnail(item: item).frame(width: min(140, max(18, item.frame.width)), height: 24)
                 .overlay(alignment: .bottomTrailing) {
                     if !item.isMovable {
                         Image(systemName: "lock.fill").font(.system(size: 6))
                             .padding(1).background(.background, in: Circle())
                     }
                 }
-        .frame(width: 32, height: 32)
+        .frame(width: min(148, max(32, item.frame.width + 8)), height: 32)
         .background(hoveredItem == item.id ? Color.primary.opacity(0.1) : .clear,
                     in: RoundedRectangle(cornerRadius: 4))
         .contentShape(Rectangle())
@@ -149,9 +153,9 @@ struct MenuBarOrganizerEditor: View {
                     .disabled(!canArrange || !item.isMovable || destination == section)
             }
         }
+        .dropDestination(for: String.self) { values, _ in drop(values, before: item.id, section: section) }
         if canArrange && item.isMovable {
             tile.draggable(encoded(item.id))
-                .dropDestination(for: String.self) { values, _ in drop(values, before: item.id, section: section) }
         } else { tile }
     }
 

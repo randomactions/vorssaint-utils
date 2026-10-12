@@ -20,8 +20,7 @@ enum MenuBarHiderAccessibility {
                                    permanentHelp: String) -> (normal: CGRect, permanent: CGRect)? {
         for pid in pids {
             if let positions = separatorPositions(pid: pid, normalHelp: normalHelp,
-                                                  permanentHelp: permanentHelp,
-                                                  deadline: Date().addingTimeInterval(0.2)) {
+                                                  permanentHelp: permanentHelp) {
                 return positions
             }
         }
@@ -29,32 +28,54 @@ enum MenuBarHiderAccessibility {
     }
 
     private static func separatorPositions(pid: pid_t, normalHelp: String,
-                                          permanentHelp: String, deadline: Date) -> (normal: CGRect, permanent: CGRect)? {
+                                          permanentHelp: String) -> (normal: CGRect, permanent: CGRect)? {
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.03)
-        var pending: [AXUIElement] = [app]
+        // Status items have their own AX root. Searching windows first can
+        // exhaust the budget in our Settings tree before reaching the bar.
+        if let extras = value(app, "AXExtrasMenuBar"), CFGetTypeID(extras) == AXUIElementGetTypeID(),
+           let positions = search(roots: [unsafeBitCast(extras, to: AXUIElement.self)],
+                                  normalHelp: normalHelp, permanentHelp: permanentHelp,
+                                  deadline: Date().addingTimeInterval(0.5)) {
+            return positions
+        }
+        return search(roots: [app], normalHelp: normalHelp, permanentHelp: permanentHelp,
+                      deadline: Date().addingTimeInterval(0.2))
+    }
+
+    private static func search(roots: [AXUIElement], normalHelp: String,
+                               permanentHelp: String, deadline: Date) -> (normal: CGRect, permanent: CGRect)? {
+        findSeparators(roots: roots, normalHelp: normalHelp, permanentHelp: permanentHelp,
+                       canContinue: { !Task.isCancelled && Date() < deadline },
+                       labels: { element in
+                           AXUIElementSetMessagingTimeout(element, 0.03)
+                           return [kAXHelpAttribute, kAXDescriptionAttribute, kAXTitleAttribute]
+                               .compactMap { value(element, $0) as? String }
+                       }, frame: frame,
+                       children: { value($0, kAXChildrenAttribute) as? [AXUIElement] ?? [] })
+    }
+
+    /// Breadth-first traversal prevents a deep Settings window from starving
+    /// sibling menu-bar controls. Kept bounded even for malformed AX trees.
+    static func findSeparators<Node>(roots: [Node], normalHelp: String, permanentHelp: String,
+                                     canContinue: () -> Bool, labels: (Node) -> [String],
+                                     frame: (Node) -> CGRect?, children: (Node) -> [Node])
+        -> (normal: CGRect, permanent: CGRect)? {
+        var pending = roots
         var visited = 0
         var normal: CGRect?
         var permanent: CGRect?
-        while !pending.isEmpty, visited < 160, Date() < deadline {
-            let element = pending.removeLast()
-            // The timeout is per element; children otherwise wait seconds.
-            AXUIElementSetMessagingTimeout(element, 0.03)
+        while !pending.isEmpty, visited < 160, canContinue() {
+            let element = pending.removeFirst()
             visited += 1
-            let labels = [kAXHelpAttribute, kAXDescriptionAttribute, kAXTitleAttribute]
-                .compactMap { value(element, $0) as? String }
+            let labels = labels(element)
             if labels.contains(normalHelp) || labels.contains(permanentHelp),
                let frame = frame(element) {
                 if labels.contains(normalHelp) { normal = frame }
                 if labels.contains(permanentHelp) { permanent = frame }
                 if let normal, let permanent, normal != permanent { return (normal, permanent) }
             }
-            if let children = value(element, kAXChildrenAttribute) as? [AXUIElement] {
-                pending.append(contentsOf: children.prefix(64))
-            }
-            if visited == 1, let windows = value(element, kAXWindowsAttribute) as? [AXUIElement] {
-                pending.append(contentsOf: windows.prefix(8))
-            }
+            pending.append(contentsOf: children(element).prefix(64))
         }
         return nil
     }

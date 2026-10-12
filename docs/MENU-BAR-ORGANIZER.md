@@ -21,8 +21,12 @@ title or identifier; multiple unnamed items remain ambiguous.
 
 The drawer scrolls independently of menu-bar width. Search supports fuzzy
 matches, arrow navigation, Return and Escape. Always Hidden items are excluded
-from both drawer and search, and the activation service rejects them. Previews
-use app icons, not screen captures; Screen Recording is not required.
+from both drawer and search, and the activation service rejects them. Previews capture the actual status-item artwork on each user’s Mac at runtime,
+including text indicators. Screen Recording is optional and needed only for these
+previews; without it, tiles show a neutral placeholder and retain names and
+Accessibility-based arrangement. Captures are limited to validated menu-bar
+windows, remain in memory, and are cleared when the editor/drawer closes or
+permission is revoked. No captured artwork is bundled or uploaded.
 
 Opening Settings, repeated clicks, Option-click and recovery never reveal
 Always Hidden. The two underlying native spacers remain blank; no separator
@@ -40,7 +44,8 @@ Hidden remains concealed. Disable, uninstall, quit and permission loss cancel
 input and release pending mouse input and cursor suppression. Decoration is
 independent of Accessibility.
 
-Window identities and app icons are reused during inventory polling. Operations
+Window identities are reused during inventory polling; live status-item previews
+refresh only while the editor or drawer is visible. Operations
 revalidate identities; app, permission, display and wake changes invalidate the
 inventory. Stale scans cannot publish results. Motion monitoring is active only
 while Command is held.
@@ -111,4 +116,28 @@ A settings preview demonstrates layout only, not successful desktop interaction.
 
 The branch preserves #2741's commits by @0xJJphy. Inventory, identity resolution,
 movement and WindowServer query code are adapted from #360 by @ruvelro and
-@frogkingg. Ice informed the feature comparison; no Ice source was copied.
+@frogkingg. The hosted-window event field mapping was informed by
+[Ice](https://github.com/jordanbaird/Ice) (GPL-3.0), specifically its
+`MenuBarItemManager` event routing. The movement implementation retains
+Vorssaint’s bounded drag, input cleanup and post-move verification.
+
+## Display scope and validation limits
+
+The inventory is scoped to the display containing the hider’s divider. A menu
+bar on another display is never classified against those dividers. When displays
+share the same menu-bar row, offscreen ownership cannot be established from
+window geometry alone; ambiguous offscreen items are omitted rather than moved
+on the wrong display. Vertically separated bars retain unambiguous offscreen
+items. Full multi-display arrangement remains a desktop-QA limitation.
+
+Native input targets the exact hosted status window through the session event
+stream, and each move still requires a fresh position check. Undo can use a
+locked or unnamed neighbor as an insertion anchor without making that neighbor
+a movable source. The current native movement changes still need interactive
+QA, especially Always Hidden and Undo; automated checks do not establish that
+WindowServer accepted a physical rearrangement.
+
+The basic circle remains permission-free. Automatic Command-drag expansion
+while another app is active still depends on Accessibility for global modifier
+events. Use the circle to reveal Hidden items first; permission-free global
+modifier delivery remains unresolved and is not covered by automated tests.

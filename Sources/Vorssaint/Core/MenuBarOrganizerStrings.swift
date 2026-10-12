@@ -62,7 +62,7 @@ extension FeatureStrings {
 extension MenuBarOrganizerStrings {
     static let enUS = MenuBarOrganizerStrings(
         advanced: "Advanced controls",
-        advancedCaption: "Arrange and activate menu bar items with Accessibility. Previews use app icons; Screen Recording is not required.",
+        advancedCaption: "Arrange and activate menu bar items with Accessibility.",
         unsupported: "Arrangement and the drawer support macOS 14–26. Basic hiding remains available on newer systems.",
         conflict: "Quit other menu bar managers before arranging items.",
         drawer: "Icon drawer",
@@ -95,7 +95,7 @@ extension MenuBarOrganizerStrings {
     )
     static let ptBR = MenuBarOrganizerStrings(
         advanced: "Controles avançados",
-        advancedCaption: "Organize e ative itens com Acessibilidade. As prévias usam ícones de apps; não exigem Gravação de Tela.",
+        advancedCaption: "Organize e ative itens com Acessibilidade.",
         unsupported: "Organização e gaveta disponíveis no macOS 14–26. Ocultar continua disponível em sistemas mais recentes.",
         conflict: "Encerre outros gerenciadores antes de organizar.",
         drawer: "Gaveta de ícones",
@@ -128,7 +128,7 @@ extension MenuBarOrganizerStrings {
     )
     static let ru = MenuBarOrganizerStrings(
         advanced: "Расширенные настройки",
-        advancedCaption: "Упорядочивайте и открывайте значки с Универсальным доступом. Используются значки приложений; Запись экрана не нужна.",
+        advancedCaption: "Упорядочивайте и открывайте значки с Универсальным доступом.",
         unsupported: "Редактор и панель поддерживают macOS 14–26. Обычное скрытие доступно и в новых версиях.",
         conflict: "Закройте другие менеджеры строки меню перед перестановкой.",
         drawer: "Панель значков",
@@ -161,7 +161,7 @@ extension MenuBarOrganizerStrings {
     )
     static let uk = MenuBarOrganizerStrings(
         advanced: "Розширені налаштування",
-        advancedCaption: "Упорядковуйте й відкривайте значки з Доступністю. Використовуються значки програм; Запис екрана не потрібен.",
+        advancedCaption: "Упорядковуйте й відкривайте значки з Доступністю.",
         unsupported: "Редактор і панель підтримують macOS 14–26. Звичайне приховування доступне й у новіших версіях.",
         conflict: "Закрийте інші менеджери рядка меню перед упорядкуванням.",
         drawer: "Панель значків",
@@ -194,7 +194,7 @@ extension MenuBarOrganizerStrings {
     )
     static let es = MenuBarOrganizerStrings(
         advanced: "Controles avanzados",
-        advancedCaption: "Ordena y activa elementos con Accesibilidad. Las vistas usan iconos de apps; no necesitan Grabación de pantalla.",
+        advancedCaption: "Ordena y activa elementos con Accesibilidad.",
         unsupported: "El editor y el panel admiten macOS 14–26. La ocultación básica sigue disponible en versiones posteriores.",
         conflict: "Cierra otros gestores de la barra antes de ordenar.",
         drawer: "Panel de iconos",
@@ -227,7 +227,7 @@ extension MenuBarOrganizerStrings {
     )
     static let de = MenuBarOrganizerStrings(
         advanced: "Erweiterte Steuerung",
-        advancedCaption: "Symbole mit Bedienungshilfen anordnen und öffnen. Vorschauen zeigen App-Symbole; Bildschirmaufnahme ist nicht erforderlich.",
+        advancedCaption: "Symbole mit Bedienungshilfen anordnen und öffnen.",
         unsupported: "Editor und Symbolleiste unterstützen macOS 14–26. Einfaches Ausblenden bleibt auf neueren Systemen verfügbar.",
         conflict: "Andere Menüleisten-Manager vor dem Anordnen beenden.",
         drawer: "Symbolleiste",
@@ -260,7 +260,7 @@ extension MenuBarOrganizerStrings {
     )
     static let fr = MenuBarOrganizerStrings(
         advanced: "Commandes avancées",
-        advancedCaption: "Organisez et ouvrez les éléments avec Accessibilité. Les aperçus utilisent les icônes des apps ; aucun enregistrement de l’écran requis.",
+        advancedCaption: "Organisez et ouvrez les éléments avec Accessibilité.",
         unsupported: "L’éditeur et le panneau prennent en charge macOS 14–26. Le masquage simple reste disponible sur les versions récentes.",
         conflict: "Quittez les autres gestionnaires avant de réorganiser.",
         drawer: "Panneau d’icônes",
@@ -293,7 +293,7 @@ extension MenuBarOrganizerStrings {
     )
     static let it = MenuBarOrganizerStrings(
         advanced: "Controlli avanzati",
-        advancedCaption: "Organizza e apri gli elementi con Accessibilità. Le anteprime usano icone delle app; Registrazione schermo non è necessaria.",
+        advancedCaption: "Organizza e apri gli elementi con Accessibilità.",
         unsupported: "Editor e pannello supportano macOS 14–26. Nascondere resta disponibile sui sistemi più recenti.",
         conflict: "Chiudi gli altri gestori prima di organizzare.",
         drawer: "Pannello icone",
@@ -326,7 +326,7 @@ extension MenuBarOrganizerStrings {
     )
     static let sk = MenuBarOrganizerStrings(
         advanced: "Rozšírené ovládanie",
-        advancedCaption: "Usporiadajte a otvárajte položky s Prístupnosťou. Náhľady používajú ikony aplikácií; nahrávanie obrazovky nie je potrebné.",
+        advancedCaption: "Usporiadajte a otvárajte položky s Prístupnosťou.",
         unsupported: "Editor a panel podporujú macOS 14–26. Základné skrývanie funguje aj na novších systémoch.",
         conflict: "Pred usporiadaním ukončite iné správcovské aplikácie.",
         drawer: "Panel ikon",
@@ -359,7 +359,7 @@ extension MenuBarOrganizerStrings {
     )
     static let ja = MenuBarOrganizerStrings(
         advanced: "高度な操作",
-        advancedCaption: "アクセシビリティで項目を並べ替えたり開いたりできます。プレビューはアプリアイコンを使い、画面収録は不要です。",
+        advancedCaption: "アクセシビリティで項目を並べ替えたり開いたりできます。",
         unsupported: "編集とパネルは macOS 14〜26 に対応します。新しい OS でも基本的な非表示機能は使えます。",
         conflict: "並べ替える前に他のメニューバー管理アプリを終了してください。",
         drawer: "アイコンパネル",
@@ -392,7 +392,7 @@ extension MenuBarOrganizerStrings {
     )
     static let ko = MenuBarOrganizerStrings(
         advanced: "고급 제어",
-        advancedCaption: "손쉬운 사용으로 항목을 정렬하고 엽니다. 미리보기에는 앱 아이콘을 사용하며 화면 기록은 필요하지 않습니다.",
+        advancedCaption: "손쉬운 사용으로 항목을 정렬하고 엽니다.",
         unsupported: "편집기와 패널은 macOS 14–26을 지원합니다. 기본 숨기기는 최신 시스템에서도 사용할 수 있습니다.",
         conflict: "정렬 전에 다른 메뉴 막대 관리 앱을 종료하세요.",
         drawer: "아이콘 패널",
@@ -425,7 +425,7 @@ extension MenuBarOrganizerStrings {
     )
     static let zhHans = MenuBarOrganizerStrings(
         advanced: "高级控制",
-        advancedCaption: "通过辅助功能排列和打开菜单栏项目。预览使用应用图标，无需屏幕录制。",
+        advancedCaption: "通过辅助功能排列和打开菜单栏项目。",
         unsupported: "编辑器和面板支持 macOS 14–26。基本隐藏功能在更新系统上仍可使用。",
         conflict: "排列前请退出其他菜单栏管理应用。",
         drawer: "图标面板",
@@ -458,7 +458,7 @@ extension MenuBarOrganizerStrings {
     )
     static let zhTW = MenuBarOrganizerStrings(
         advanced: "進階控制",
-        advancedCaption: "透過輔助使用排列和開啟選單列項目。預覽使用 App 圖像，無需螢幕錄製。",
+        advancedCaption: "透過輔助使用排列和開啟選單列項目。",
         unsupported: "編輯器和面板支援 macOS 14–26。基本隱藏功能在更新系統上仍可使用。",
         conflict: "排列前請結束其他選單列管理 App。",
         drawer: "圖像面板",
@@ -491,7 +491,7 @@ extension MenuBarOrganizerStrings {
     )
     static let zhHK = MenuBarOrganizerStrings(
         advanced: "進階控制",
-        advancedCaption: "透過輔助使用排列和開啟選單列項目。預覽使用 App 圖像，毋須螢幕錄製。",
+        advancedCaption: "透過輔助使用排列和開啟選單列項目。",
         unsupported: "編輯器和面板支援 macOS 14–26。基本隱藏功能在較新系統仍可使用。",
         conflict: "排列前請結束其他選單列管理 App。",
         drawer: "圖像面板",
@@ -524,7 +524,7 @@ extension MenuBarOrganizerStrings {
     )
     static let tr = MenuBarOrganizerStrings(
         advanced: "Gelişmiş denetimler",
-        advancedCaption: "Erişilebilirlik ile öğeleri düzenleyin ve açın. Önizlemeler uygulama simgelerini kullanır; Ekran Kaydı gerekmez.",
+        advancedCaption: "Erişilebilirlik ile öğeleri düzenleyin ve açın.",
         unsupported: "Düzenleyici ve panel macOS 14–26 sürümlerini destekler. Temel gizleme yeni sistemlerde de kullanılabilir.",
         conflict: "Düzenlemeden önce diğer menü çubuğu yöneticilerini kapatın.",
         drawer: "Simge paneli",

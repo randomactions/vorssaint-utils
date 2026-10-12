@@ -7,6 +7,82 @@ import AppKit
 /// write global spacing, synthesize input, or change the real menu bar.
 enum MenuBarOrganizerTests {
     static func run(_ suite: TestSuite) {
+        suite.expect(!MenuBarOrganizerPolicy.isOpenMenuWindow(level: 24, popupLevel: 101, isStatusItem: false, alpha: 1),
+                     "the persistent main menu bar does not block native moves")
+        suite.expect(!MenuBarOrganizerPolicy.isOpenMenuWindow(level: 101, popupLevel: 101, isStatusItem: true, alpha: 1),
+                     "a known hosted status item is not an open popup")
+        suite.expect(MenuBarOrganizerPolicy.isOpenMenuWindow(level: 101, popupLevel: 101, isStatusItem: false, alpha: 1),
+                     "an actual visible popup still blocks movement")
+        suite.expect(!MenuBarOrganizerPolicy.isOpenMenuWindow(level: 101, popupLevel: 101, isStatusItem: false, alpha: 0),
+                     "a transparent dismissed popup does not block movement")
+        let screen = CGRect(x: 0, y: 0, width: 1_920, height: 1_080)
+        let leftScreen = CGRect(x: -1_920, y: 0, width: 1_920, height: 1_080)
+        let upperScreen = CGRect(x: 0, y: -1_080, width: 1_920, height: 1_080)
+        let divider = CGRect(x: -1_100, y: 0, width: 2_000, height: 24)
+        func record(_ id: UInt32, x: CGFloat, y: CGFloat = 0, onScreen: Bool = true) -> MenuBarOrganizerWindowRecord {
+            .init(windowID: id, ownerPID: 1, ownerName: "Test", ownerBundleIdentifier: "test.app",
+                  title: "same", frame: CGRect(x: x, y: y, width: 24, height: 24),
+                  layer: 25, alpha: 1, isOnScreen: onScreen)
+        }
+        let visible = record(1, x: 1_200)
+        let mirrored = record(2, x: -800)
+        let offscreen = record(3, x: -2_500, onScreen: false)
+        let upper = record(4, x: 1_200, y: -1_080)
+        suite.expect(MenuBarOrganizerPolicy.recordsOnDividerDisplay([visible, mirrored, offscreen],
+            divider: divider, displays: [screen, leftScreen])?.map(\.windowID) == [1],
+            "aligned displays never classify their neighbor's visible or ambiguous offscreen icons")
+        suite.expect(MenuBarOrganizerPolicy.recordsOnDividerDisplay([record(5, x: 1_200, onScreen: false)],
+            divider: divider, displays: [screen, leftScreen])?.isEmpty == true,
+            "an offscreen replica projected inside a neighboring display is still ambiguous")
+        suite.expect(MenuBarOrganizerPolicy.recordsOnDividerDisplay([visible, offscreen, upper],
+            divider: divider, displays: [screen, upperScreen])?.map(\.windowID) == [1, 3],
+            "vertical displays retain the target bar's unambiguous offscreen items")
+        suite.expect(MenuBarOrganizerPolicy.recordsOnDividerDisplay([visible], divider: divider,
+            displays: []) == nil, "missing divider display fails closed")
+        let duplicates = MenuBarOrganizerSupport.identities(for: [visible, mirrored], sources: [:])
+        suite.expect(duplicates.values.allSatisfy { $0.state == .provisional },
+                     "duplicate source identities cannot advertise movable items")
+        for bundle in [MenuBarOrganizerSupport.controlCenterBundleIdentifier,
+                       MenuBarOrganizerSupport.systemUIServerBundleIdentifier] {
+            for title in ["Часы", "Uhr", "月曜日", "12 octobre", ""] {
+                suite.expect(MenuBarOrganizerSupport.isSystemImmovable(bundleIdentifier: bundle, title: title),
+                             "system controls stay protected independently of language")
+            }
+        }
+        suite.expect(!MenuBarOrganizerSupport.isSystemImmovable(bundleIdentifier: "test.thirdparty", title: "Clock"),
+                     "a resolved third-party source is not protected solely by its displayed name")
+        let normalFrame = CGRect(x: 80, y: 0, width: 8, height: 24)
+        let permanentFrame = CGRect(x: -2_400, y: 0, width: 2_468, height: 24)
+        var scanned = 0
+        let positions = MenuBarHiderAccessibility.findSeparators(
+            roots: [0], normalHelp: "normal", permanentHelp: "permanent", canContinue: { true },
+            labels: { node in
+                scanned += 1
+                return node == 2 ? ["normal"] : node == 3 ? ["permanent"] : []
+            }, frame: { $0 == 2 ? normalFrame : $0 == 3 ? permanentFrame : nil },
+            children: { $0 == 0 ? [1, 2, 3] : $0 == 1 || $0 >= 10 ? [$0 + 10] : [] })
+        suite.expect(positions?.normal == normalFrame && positions?.permanent == permanentFrame && scanned == 4,
+                     "deep Settings descendants cannot starve sibling separator discovery")
+        scanned = 0
+        let cycle = MenuBarHiderAccessibility.findSeparators(
+            roots: [0], normalHelp: "normal", permanentHelp: "permanent", canContinue: { true },
+            labels: { _ in scanned += 1; return [] }, frame: { _ in nil }, children: { [$0] })
+        suite.expect(cycle == nil && scanned == 160, "cyclic AX trees remain bounded")
+        let cancelled = MenuBarHiderAccessibility.findSeparators(
+            roots: [0], normalHelp: "normal", permanentHelp: "permanent", canContinue: { false },
+            labels: { _ in suite.expect(false, "cancelled scans do not query AX"); return [] },
+            frame: { _ in nil }, children: { _ in [] })
+        suite.expect(cancelled == nil, "cancelled scans fail closed")
+        if let event = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp,
+                               mouseCursorPosition: .zero, mouseButton: .left) {
+            event.flags = [.maskCommand, .maskShift]
+            MenuBarOrganizerSupport.routeEvent(event, to: 123, pid: 456, command: false)
+            suite.expect(event.flags.isEmpty, "release events clear synthetic modifiers")
+            suite.expect(event.getIntegerValueField(.eventTargetUnixProcessID) == 456
+                         && event.getIntegerValueField(.mouseEventWindowUnderMousePointer) == 123
+                         && event.getIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent) == 123,
+                         "hosted event routing retains the exact process and status window")
+        } else { suite.expect(false, "test event can be constructed without posting input") }
         for version in 10...30 {
             suite.expect(MenuBarOrganizerPolicy.supportsAdvancedBackend(majorVersion: version) == (14...26).contains(version),
                          "the advanced WindowServer backend fails closed outside macOS 14–26")
@@ -74,6 +150,11 @@ enum MenuBarOrganizerTests {
         let provisional = item(id: "p", window: 5, x: 10, provisional: true)
         suite.expect(MenuBarOrganizerPolicy.uniquelyIdentified(provisional.id, in: [provisional]) == nil,
                      "a generic host identity never authorizes a click")
+        let anchor = MenuBarItemAnchor(provisional)
+        suite.expect(anchor.resolve(in: [provisional])?.windowID == 5,
+                     "Undo may use an unnamed neighbor as a position without moving that neighbor")
+        suite.expect(anchor.resolve(in: []) == nil && anchor.resolve(in: [provisional, provisional]) == nil,
+                     "missing or duplicated destination windows cannot authorize insertion")
         let protected = item(id: "clock", window: 6, x: 10, protected: true)
         suite.expect(MenuBarOrganizerPolicy.uniquelyIdentified(protected.id, in: [protected]) == nil,
                      "protected recovery and system items cannot be selected")
@@ -222,6 +303,6 @@ enum MenuBarOrganizerTests {
                            ownerName: "Test", sourceName: "Test", bundleIdentifier: "test.app", title: id,
                            frame: CGRect(x: x, y: 0, width: 20, height: 24), section: section,
                            identityState: provisional ? .provisional : .stable, isMovable: !protected,
-                           isProtected: protected, image: nil)
+                           isProtected: protected)
     }
 }
